@@ -185,11 +185,14 @@ public static class AiServiceCollectionExtensions
 
         // OpenRouter chat — same OpenAI-compatible client shape as DeepSeek (shared base class), its own
         // base URL + per-request OpenRouterBearerHandler. No attribution headers are configured.
+        // Without AddStandardResilienceHandler so its 10s default AttemptTimeout does not abort
+        // thinking models (e.g. Gemini 3+ via OpenAI-compatible endpoint) mid-tool-call.
         services.AddHttpClient<OpenRouterLlmClient>((sp, client) =>
         {
             var o = sp.GetRequiredService<IOptions<AiOptions>>().Value;
             client.BaseAddress = new Uri(o.OpenRouter.BaseUrl);
-        }).AddHttpMessageHandler<OpenRouterBearerHandler>().AddStandardResilienceHandler();
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        }).AddHttpMessageHandler<OpenRouterBearerHandler>();
 
         // Anthropic (Claude) chat via the official SDK. The SDK gets a named HttpClient WITHOUT the
         // standard resilience handler (the SDK retries itself; the handler's timeouts would abort long

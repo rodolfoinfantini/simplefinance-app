@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -43,6 +44,7 @@ public abstract class OpenAiCompatibleLlmClient : ILlmClient
     private readonly IAiBudgetGuard _budgetGuard;
     private readonly IAiUsageRecorder _usageRecorder;
     private readonly SimpleFinanceDbContext _db;
+    private readonly ConcurrentDictionary<string, JsonElement> _toolCallExtraContent = new(StringComparer.Ordinal);
 
     protected OpenAiCompatibleLlmClient(
         HttpClient httpClient,
@@ -192,11 +194,14 @@ public abstract class OpenAiCompatibleLlmClient : ILlmClient
         var messages = request.Messages
             .Select(m => new DeepSeekMessage(
                 Role: m.Role,
-                Content: _redactor.Redact(m.Content),
+                Content: m.ToolCalls is { Count: > 0 } && string.IsNullOrEmpty(m.Content)
+                    ? null
+                    : _redactor.Redact(m.Content),
                 ToolCalls: m.ToolCalls?.Select(tc => new DeepSeekToolCall(
                     Id: tc.Id,
                     Type: "function",
-                    Function: new DeepSeekToolCallFunction(tc.Name, tc.ArgumentsJson))).ToList(),
+                    Function: new DeepSeekToolCallFunction(tc.Name, tc.ArgumentsJson),
+                    ExtraContent: _toolCallExtraContent.TryGetValue(tc.Id, out var extra) ? extra : null)).ToList(),
                 ToolCallId: m.ToolCallId))
             .ToList();
 
@@ -213,9 +218,27 @@ public abstract class OpenAiCompatibleLlmClient : ILlmClient
             StreamOptions: includeUsage ? new DeepSeekStreamOptions(IncludeUsage: true) : null);
     }
 
-    private static LlmResult MapResponse(DeepSeekChatResponse response)
+    private LlmResult MapResponse(DeepSeekChatResponse response)
     {
         var message = response.Choices is { Count: > 0 } ? response.Choices[0].Message : null;
+        if (message?.ToolCalls is { Count: > 0 })
+        {
+            for (var i = 0; i < message.ToolCalls.Count; i++)
+            {
+                var tc = message.ToolCalls[i];
+                var extra = tc.ExtraContent is { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined }
+                    ? tc.ExtraContent.Value
+                    : i == 0 && message.ExtraContent is { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined }
+                        ? message.ExtraContent.Value
+                        : (JsonElement?)null;
+
+                if (extra is not null)
+                {
+                    _toolCallExtraContent[tc.Id] = extra.Value.Clone();
+                }
+            }
+        }
+
         var toolCalls = message?.ToolCalls?
             .Select(tc => new LlmToolCall(tc.Id, tc.Function.Name, tc.Function.Arguments))
             .ToList() ?? [];

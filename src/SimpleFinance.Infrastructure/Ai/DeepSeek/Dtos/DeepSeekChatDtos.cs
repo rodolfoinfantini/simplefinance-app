@@ -42,7 +42,8 @@ internal sealed record DeepSeekFunction(
 internal sealed record DeepSeekToolCall(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("type")] string Type,
-    [property: JsonPropertyName("function")] DeepSeekToolCallFunction Function);
+    [property: JsonPropertyName("function")] DeepSeekToolCallFunction Function,
+    [property: JsonPropertyName("extra_content")] JsonElement? ExtraContent = null);
 
 internal sealed record DeepSeekToolCallFunction(
     [property: JsonPropertyName("name")] string Name,
@@ -62,7 +63,8 @@ internal sealed record DeepSeekChoice(
 internal sealed record DeepSeekResponseMessage(
     [property: JsonPropertyName("content")] string? Content,
     [property: JsonPropertyName("reasoning_content")] string? ReasoningContent,
-    [property: JsonPropertyName("tool_calls")] IReadOnlyList<DeepSeekToolCall>? ToolCalls);
+    [property: JsonPropertyName("tool_calls")] IReadOnlyList<DeepSeekToolCall>? ToolCalls,
+    [property: JsonPropertyName("extra_content")] JsonElement? ExtraContent = null);
 
 internal sealed record DeepSeekUsage(
     [property: JsonPropertyName("prompt_tokens")] int PromptTokens,

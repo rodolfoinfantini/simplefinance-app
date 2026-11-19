@@ -147,4 +147,61 @@ public class OpenRouterLlmClientTests
         Assert.True(body.RootElement.GetProperty("stream").GetBoolean());
         Assert.True(body.RootElement.GetProperty("stream_options").GetProperty("include_usage").GetBoolean());
     }
+
+    [Fact]
+    public async Task ChatAsync_RoundTripsToolCallExtraContent_AndOmitsEmptyAssistantContent()
+    {
+        const string toolCallWithSignatureJson = """
+            {
+              "choices": [
+                {
+                  "index": 0,
+                  "message": {
+                    "content": null,
+                    "tool_calls": [
+                      {
+                        "id": "call_sig_1",
+                        "type": "function",
+                        "function": { "name": "sum_by_category", "arguments": "{\"period\":\"this_month\",\"type\":\"expense\"}" },
+                        "extra_content": {
+                          "google": {
+                            "thought_signature": "sig-abc-123"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "finish_reason": "tool_calls"
+                }
+              ],
+              "usage": { "prompt_tokens": 20, "completion_tokens": 5, "total_tokens": 25 }
+            }
+            """;
+
+        using var handler = new CapturingHandler(toolCallWithSignatureJson);
+        await using var db = CreateDbWithUser();
+        var client = CreateClient(handler, db, new PassThroughBudgetGuard(), new RecordingUsageRecorder());
+
+        var firstTurn = await client.ChatAsync(Request("Quanto gastei?", model: "models/gemini-3.8-flash"), CancellationToken.None);
+
+        var followUp = new LlmChatRequest(
+            Model: "models/gemini-3.8-flash",
+            Messages:
+            [
+                new LlmMessage("user", "Quanto gastei?"),
+                new LlmMessage("assistant", firstTurn.Content, ToolCalls: firstTurn.ToolCalls),
+                new LlmMessage("tool", """{"total":100}""", ToolCallId: "call_sig_1"),
+            ],
+            Feature: AiFeature.Assistant);
+
+        await client.ChatAsync(followUp, CancellationToken.None);
+
+        using var body = JsonDocument.Parse(handler.LastRequestBody!);
+        var assistantMsg = body.RootElement.GetProperty("messages")[1];
+        Assert.False(assistantMsg.TryGetProperty("content", out _));
+        var echoedToolCall = assistantMsg.GetProperty("tool_calls")[0];
+        Assert.Equal(
+            "sig-abc-123",
+            echoedToolCall.GetProperty("extra_content").GetProperty("google").GetProperty("thought_signature").GetString());
+    }
 }
