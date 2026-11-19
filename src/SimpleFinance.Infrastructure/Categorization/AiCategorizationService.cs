@@ -48,6 +48,7 @@ public sealed class AiCategorizationService : IAiCategorizationService
     private readonly IPiiRedactor _redactor;
     private readonly AiOptions _options;
     private readonly ILogger<AiCategorizationService> _logger;
+    private readonly IAiKeyProvider? _keyProvider;
 
     public AiCategorizationService(
         SimpleFinanceDbContext db,
@@ -57,7 +58,8 @@ public sealed class AiCategorizationService : IAiCategorizationService
         ILlmClient llmClient,
         IPiiRedactor redactor,
         IOptions<AiOptions> options,
-        ILogger<AiCategorizationService> logger)
+        ILogger<AiCategorizationService> logger,
+        IAiKeyProvider? keyProvider = null)
     {
         _db = db;
         _deterministic = deterministic;
@@ -67,6 +69,7 @@ public sealed class AiCategorizationService : IAiCategorizationService
         _redactor = redactor;
         _options = options.Value;
         _logger = logger;
+        _keyProvider = keyProvider;
     }
 
     public async Task<CategoryClassification> ClassifyAsync(Guid userId, Guid transactionId, CancellationToken ct)
@@ -163,9 +166,30 @@ public sealed class AiCategorizationService : IAiCategorizationService
             }
         }
 
+        if (_keyProvider is not null)
+        {
+            var openAiKey = await _keyProvider.GetOpenAiKeyAsync(ct);
+            if (string.IsNullOrWhiteSpace(openAiKey))
+            {
+                return null;
+            }
+        }
+
         var text = _redactor.Redact($"{txn.Description} {txn.MerchantName}".Trim());
-        var vectors = await _embeddingClient.EmbedAsync(new[] { text }, ct);
-        return vectors.Length > 0 ? new Vector(vectors[0]) : null;
+        try
+        {
+            var vectors = await _embeddingClient.EmbedAsync(new[] { text }, ct);
+            return vectors.Length > 0 ? new Vector(vectors[0]) : null;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "AiCategorizationService skipped kNN embedding for user {UserId}, transaction {TransactionId}; falling back to LLM.",
+                userId,
+                txn.Id);
+            return null;
+        }
     }
 
     private async Task<CategoryClassification> ClassifyWithLlmAsync(Guid userId, Transaction txn, UserSettings settings, CancellationToken ct)

@@ -127,21 +127,25 @@ public class OpenAiEmbeddingClientTests
         return db;
     }
 
-    private static IOptions<AiOptions> Options() => Microsoft.Extensions.Options.Options.Create(new AiOptions
-    {
-        OpenAiApiKey = "test-key",
-        OpenAi = new AiProviderEndpoint { BaseUrl = "https://api.openai.com/v1/" },
-        OpenAiEmbeddingModel = "text-embedding-3-small",
-    });
+    private static IOptions<AiOptions> Options(int? dimensions = null, string model = "text-embedding-3-small") =>
+        Microsoft.Extensions.Options.Options.Create(new AiOptions
+        {
+            OpenAiApiKey = "test-key",
+            OpenAi = new AiProviderEndpoint { BaseUrl = "https://api.openai.com/v1/" },
+            OpenAiEmbeddingModel = model,
+            OpenAiEmbeddingDimensions = dimensions,
+        });
 
     private static OpenAiEmbeddingClient CreateClient(
         EchoHandler handler,
         SimpleFinanceDbContext db,
         IAiBudgetGuard guard,
-        IAiUsageRecorder recorder)
+        IAiUsageRecorder recorder,
+        int? dimensions = null,
+        string model = "text-embedding-3-small")
     {
         var httpClient = new HttpClient(handler, disposeHandler: false) { BaseAddress = new Uri("https://api.openai.com/v1/") };
-        return new OpenAiEmbeddingClient(httpClient, Options(), new PiiRedactor(), guard, recorder, db);
+        return new OpenAiEmbeddingClient(httpClient, Options(dimensions, model), new PiiRedactor(), guard, recorder, db);
     }
 
     [Fact]
@@ -258,5 +262,31 @@ public class OpenAiEmbeddingClientTests
         Assert.Equal(OpenAiEmbeddingClient.HashNormalized("Mercado  Pago"), OpenAiEmbeddingClient.HashNormalized("Mercado Pago"));
         Assert.Equal(OpenAiEmbeddingClient.HashNormalized(" x "), OpenAiEmbeddingClient.HashNormalized("x"));
         Assert.NotEqual(OpenAiEmbeddingClient.HashNormalized("a"), OpenAiEmbeddingClient.HashNormalized("b"));
+    }
+
+    [Fact]
+    public async Task EmbedAsync_OmitsDimensionsWhenNull_AndSendsDimensionsWhenConfigured()
+    {
+        using var handler = new EchoHandler();
+        await using var db = CreateDbWithUser();
+
+        var defaultClient = CreateClient(handler, db, new PassThroughBudgetGuard(), new RecordingUsageRecorder());
+        await defaultClient.EmbedAsync(["alpha"], CancellationToken.None);
+        using (var defaultBody = JsonDocument.Parse(handler.LastRequestBody!))
+        {
+            Assert.False(defaultBody.RootElement.TryGetProperty("dimensions", out _));
+        }
+
+        var geminiClient = CreateClient(
+            handler,
+            db,
+            new PassThroughBudgetGuard(),
+            new RecordingUsageRecorder(),
+            dimensions: 1536,
+            model: "models/gemini-embedding-2");
+        await geminiClient.EmbedAsync(["alpha"], CancellationToken.None);
+        using var configuredBody = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.Equal("models/gemini-embedding-2", configuredBody.RootElement.GetProperty("model").GetString());
+        Assert.Equal(1536, configuredBody.RootElement.GetProperty("dimensions").GetInt32());
     }
 }

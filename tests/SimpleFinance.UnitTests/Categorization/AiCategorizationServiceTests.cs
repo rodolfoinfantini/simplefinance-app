@@ -36,7 +36,8 @@ public class AiCategorizationServiceTests
         SimpleFinanceDbContext db,
         FakeKnnCategoryVoter voter,
         FakeLlmClient llm,
-        FakeEmbeddingClient embedding) =>
+        FakeEmbeddingClient embedding,
+        IAiKeyProvider? keyProvider = null) =>
         new(
             db,
             new CategoryRuleEngine(db),
@@ -45,7 +46,8 @@ public class AiCategorizationServiceTests
             llm,
             new PiiRedactor(),
             Options(),
-            NullLogger<AiCategorizationService>.Instance);
+            NullLogger<AiCategorizationService>.Instance,
+            keyProvider);
 
     private static Guid SeedUser(SimpleFinanceDbContext db, bool aiEnabled, bool categorizationEnabled, string chatModel = "deepseek-chat")
     {
@@ -367,6 +369,63 @@ public class AiCategorizationServiceTests
 
         Assert.Equal(ClassificationSource.None, result.Source);
         Assert.Null(result.CategoryId);
+    }
+
+    [Fact]
+    public async Task Classify_EmbeddingHttpFailure_SkipsKnn_AndFallsBackToLlm()
+    {
+        await using var db = CreateDbContext();
+        var userId = SeedUser(db, aiEnabled: true, categorizationEnabled: true, chatModel: "models/gemini-3.8-flash");
+        var alimentacao = SeedCategory(db, userId, "Alimentação");
+        var txn = SeedTransaction(db, userId, "IFD*IFOOD", "iFood");
+
+        var voter = new FakeKnnCategoryVoter { Result = new KnnVote(alimentacao, 0.99) };
+        var llm = new FakeLlmClient
+        {
+            CannedContent = $"{{\"categoryId\":\"{alimentacao}\",\"confidence\":0.92,\"rationale\":\"iFood\"}}",
+        };
+        var embedding = new FakeEmbeddingClient { ThrowHttpRequestException = true };
+
+        var result = await CreateService(db, voter, llm, embedding).ClassifyAsync(userId, txn.Id, CancellationToken.None);
+
+        Assert.Equal(ClassificationSource.Llm, result.Source);
+        Assert.Equal(alimentacao, result.CategoryId);
+        Assert.Equal(0.92, result.Confidence);
+        Assert.Equal("models/gemini-3.8-flash", result.Model);
+        Assert.Equal(0, voter.CallCount);
+        Assert.Equal(1, llm.ChatCallCount);
+    }
+
+    [Fact]
+    public async Task Classify_NoEmbeddingKeyConfigured_SkipsEmbeddingAndKnn_AndFallsBackToLlm()
+    {
+        await using var db = CreateDbContext();
+        var userId = SeedUser(db, aiEnabled: true, categorizationEnabled: true, chatModel: "models/gemini-3.8-flash");
+        var alimentacao = SeedCategory(db, userId, "Alimentação");
+        var txn = SeedTransaction(db, userId, "IFD*IFOOD", "iFood");
+
+        var voter = new FakeKnnCategoryVoter { Result = new KnnVote(alimentacao, 0.99) };
+        var llm = new FakeLlmClient
+        {
+            CannedContent = $"{{\"categoryId\":\"{alimentacao}\",\"confidence\":0.91,\"rationale\":\"iFood\"}}",
+        };
+        var embedding = new FakeEmbeddingClient();
+
+        var result = await CreateService(db, voter, llm, embedding, new EmptyKeyProvider())
+            .ClassifyAsync(userId, txn.Id, CancellationToken.None);
+
+        Assert.Equal(ClassificationSource.Llm, result.Source);
+        Assert.Equal(alimentacao, result.CategoryId);
+        Assert.Equal(0, embedding.CallCount);
+        Assert.Equal(0, voter.CallCount);
+        Assert.Equal(1, llm.ChatCallCount);
+    }
+
+    private sealed class EmptyKeyProvider : IAiKeyProvider
+    {
+        public Task<string?> GetDeepSeekKeyAsync(CancellationToken ct) => Task.FromResult<string?>(null);
+        public Task<string?> GetOpenAiKeyAsync(CancellationToken ct) => Task.FromResult<string?>(null);
+        public Task<string?> GetKeyAsync(AiProvider provider, CancellationToken ct) => Task.FromResult<string?>(null);
     }
 
     /// <summary>

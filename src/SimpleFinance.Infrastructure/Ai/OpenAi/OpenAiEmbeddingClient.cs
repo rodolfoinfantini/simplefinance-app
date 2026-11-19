@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -35,6 +37,11 @@ public sealed class OpenAiEmbeddingClient : IEmbeddingClient
 {
     private const string EmbeddingsPath = "embeddings";
     private const int MaxBatchSize = 100;
+
+    private static readonly JsonSerializerOptions OmitNulls = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
 
     private readonly HttpClient _httpClient;
     private readonly AiOptions _options;
@@ -114,9 +121,12 @@ public sealed class OpenAiEmbeddingClient : IEmbeddingClient
         for (var offset = 0; offset < uniqueTexts.Count; offset += MaxBatchSize)
         {
             var chunk = uniqueTexts.GetRange(offset, Math.Min(MaxBatchSize, uniqueTexts.Count - offset));
-            var request = new OpenAiEmbeddingRequest(Model: model, Input: chunk);
+            var request = new OpenAiEmbeddingRequest(
+                Model: model,
+                Input: chunk,
+                Dimensions: _options.OpenAiEmbeddingDimensions);
 
-            using var response = await _httpClient.PostAsJsonAsync(EmbeddingsPath, request, ct);
+            using var response = await _httpClient.PostAsJsonAsync(EmbeddingsPath, request, OmitNulls, ct);
             response.EnsureSuccessStatusCode();
             var body = await response.Content.ReadFromJsonAsync<OpenAiEmbeddingResponse>(cancellationToken: ct)
                 ?? throw new InvalidOperationException("OpenAI POST /embeddings returned an empty response body.");

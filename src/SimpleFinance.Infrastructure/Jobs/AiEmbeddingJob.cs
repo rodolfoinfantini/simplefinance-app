@@ -40,19 +40,22 @@ public sealed class AiEmbeddingJob
     private readonly IPiiRedactor _redactor;
     private readonly AiOptions _options;
     private readonly ILogger<AiEmbeddingJob> _logger;
+    private readonly IAiKeyProvider? _keyProvider;
 
     public AiEmbeddingJob(
         SimpleFinanceDbContext db,
         IEmbeddingClient embeddingClient,
         IPiiRedactor redactor,
         IOptions<AiOptions> options,
-        ILogger<AiEmbeddingJob> logger)
+        ILogger<AiEmbeddingJob> logger,
+        IAiKeyProvider? keyProvider = null)
     {
         _db = db;
         _embeddingClient = embeddingClient;
         _redactor = redactor;
         _options = options.Value;
         _logger = logger;
+        _keyProvider = keyProvider;
     }
 
     public async Task ExecuteAsync(CancellationToken ct)
@@ -113,6 +116,18 @@ public sealed class AiEmbeddingJob
         // The distinct hashes still needing a real embedding call.
         var toEmbed = neededHashes.Where(h => !hashToVector.ContainsKey(h)).ToList();
 
+        if (toEmbed.Count > 0 && _keyProvider is not null)
+        {
+            var openAiKey = await _keyProvider.GetOpenAiKeyAsync(ct);
+            if (string.IsNullOrWhiteSpace(openAiKey))
+            {
+                _logger.LogInformation(
+                    "AiEmbeddingJob skipped remote embeddings for user {UserId}: no embedding API key configured.",
+                    userId);
+                toEmbed.Clear();
+            }
+        }
+
         var budgetHit = false;
         for (var offset = 0; offset < toEmbed.Count; offset += MaxBatchSize)
         {
@@ -138,6 +153,16 @@ public sealed class AiEmbeddingJob
                     offset,
                     toEmbed.Count);
                 budgetHit = true;
+                break;
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "AiEmbeddingJob stopped early for user {UserId}: embedding provider request failed. {Done} of {Total} distinct texts embedded this run; remaining left for next run.",
+                    userId,
+                    offset,
+                    toEmbed.Count);
                 break;
             }
         }

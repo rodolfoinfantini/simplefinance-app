@@ -44,6 +44,14 @@ public class AiOptions
     public string OpenAiEmbeddingModel { get; set; } = "text-embedding-3-small";
 
     /// <summary>
+    /// Optional output dimension override for <c>POST /embeddings</c> (Ai:OpenAiEmbeddingDimensions).
+    /// Useful when pointing <see cref="OpenAi"/> at an OpenAI-compatible provider such as Google AI
+    /// Studio's <c>models/gemini-embedding-2</c> (default 3072 dims) so returned vectors match
+    /// pgvector's <c>vector(1536)</c> column. Omitted from the wire payload when <c>null</c>.
+    /// </summary>
+    public int? OpenAiEmbeddingDimensions { get; set; }
+
+    /// <summary>
     /// model name → USD-per-1M-token rates. Seeded by NAME in appsettings so rates tune without a
     /// redeploy. Unknown models estimate 0 (still recorded) rather than blocking (AI-FND-04).
     /// </summary>

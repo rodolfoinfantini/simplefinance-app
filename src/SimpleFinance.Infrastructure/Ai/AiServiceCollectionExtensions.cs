@@ -209,13 +209,19 @@ public static class AiServiceCollectionExtensions
             new Lazy<AnthropicLlmClient>(sp.GetRequiredService<AnthropicLlmClient>),
             new Lazy<OpenRouterLlmClient>(sp.GetRequiredService<OpenRouterLlmClient>)));
 
-        // OpenAI embeddings (AI-FND-02) — typed HttpClient, resilience ON. Key injected per request by
-        // OpenAiBearerHandler (no static header).
+        // OpenAI embeddings (AI-FND-02) — typed HttpClient, resilience ON (60s attempt timeout for
+        // large batches and OpenAI-compatible providers like Google AI Studio). Key injected per
+        // request by OpenAiBearerHandler (no static header).
         services.AddHttpClient<IEmbeddingClient, OpenAiEmbeddingClient>((sp, client) =>
         {
             var o = sp.GetRequiredService<IOptions<AiOptions>>().Value;
             client.BaseAddress = new Uri(o.OpenAi.BaseUrl);
-        }).AddHttpMessageHandler<OpenAiBearerHandler>().AddStandardResilienceHandler();
+        }).AddHttpMessageHandler<OpenAiBearerHandler>().AddStandardResilienceHandler(options =>
+        {
+            options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(60);
+            options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(180);
+            options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(180);
+        });
 
         // SEPARATE streaming clients for DeepSeek/OpenRouter SSE (ChatStreamAsync). Deliberately WITHOUT
         // AddStandardResilienceHandler: the standard handler's total-request timeout aborts long-lived

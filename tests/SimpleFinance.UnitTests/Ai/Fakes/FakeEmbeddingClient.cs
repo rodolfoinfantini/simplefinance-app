@@ -31,6 +31,8 @@ public sealed class FakeEmbeddingClient : IEmbeddingClient
     /// job's graceful-stop behavior can be exercised without a real budget guard.</summary>
     public bool ThrowBudgetExceeded { get; set; }
 
+    public bool ThrowHttpRequestException { get; set; }
+
     public Task<float[][]> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct)
     {
         CallCount++;
@@ -40,6 +42,11 @@ public sealed class FakeEmbeddingClient : IEmbeddingClient
         if (ThrowBudgetExceeded)
         {
             throw new AiBudgetExceededException(Guid.Empty, 5m, 3m);
+        }
+
+        if (ThrowHttpRequestException)
+        {
+            throw new HttpRequestException("Unauthorized", null, System.Net.HttpStatusCode.Unauthorized);
         }
 
         var vectors = new float[texts.Count][];

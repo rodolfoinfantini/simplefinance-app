@@ -113,7 +113,6 @@ public sealed class AiCategorizationJob
         var pendingSet = alreadyPending.ToHashSet();
 
         var now = DateTime.UtcNow;
-        var wrote = false;
 
         foreach (var txn in backlog)
         {
@@ -122,7 +121,20 @@ public sealed class AiCategorizationJob
                 continue;
             }
 
-            var decision = await _classifier.ClassifyAsync(userId, txn.Id, ct);
+            CategoryClassification decision;
+            try
+            {
+                decision = await _classifier.ClassifyAsync(userId, txn.Id, ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "AiCategorizationJob stopped early for user {UserId} at transaction {TransactionId}: LLM provider request failed; already classified items were saved.",
+                    userId,
+                    txn.Id);
+                break;
+            }
 
             // Nothing resolved (no rule/mapping, AI off/over budget, or rejected LLM answer) — leave it.
             if (decision.CategoryId is null || decision.Source == ClassificationSource.None)
@@ -139,7 +151,6 @@ public sealed class AiCategorizationJob
                 txn.CategoryConfidence = decision.Confidence;
                 txn.CategoryModel = decision.Model;
                 txn.UpdatedAt = now;
-                wrote = true;
             }
             else
             {
@@ -158,12 +169,8 @@ public sealed class AiCategorizationJob
                     UpdatedAt = now,
                 });
                 pendingSet.Add(txn.Id);
-                wrote = true;
             }
-        }
 
-        if (wrote)
-        {
             await _db.SaveChangesAsync(ct);
         }
     }
