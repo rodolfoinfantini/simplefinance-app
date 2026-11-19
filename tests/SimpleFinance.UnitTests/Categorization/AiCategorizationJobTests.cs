@@ -274,6 +274,68 @@ public class AiCategorizationJobTests
         Assert.Equal(1, classifier.ClassifiedTransactionIds.Count(id => id == txn.Id));
     }
 
+    [Fact]
+    public async Task Run_BatchedClassifier_Retries429WithBackoff_AndSavesAllTransactions()
+    {
+        await using var db = CreateDbContext();
+        var userId = SeedUser(db, autoApplyThreshold: 0.85);
+        var categoryId = SeedCategory(db, userId);
+        var txn1 = SeedTransaction(db, userId);
+        var txn2 = SeedTransaction(db, userId);
+
+        var delays = new List<TimeSpan>();
+        var batchClassifier = new FakeBatchAiCategorizationService(categoryId, rateLimitFailuresBeforeSuccess: 1);
+        var job = new AiCategorizationJob(
+            db,
+            batchClassifier,
+            NullLogger<AiCategorizationJob>.Instance,
+            (span, _) =>
+            {
+                delays.Add(span);
+                return Task.CompletedTask;
+            });
+
+        await job.ExecuteAsync(CancellationToken.None);
+
+        Assert.Single(delays);
+        Assert.Equal(2, batchClassifier.BatchCallCount); // 1 failed with 429 + 1 succeeded on retry
+        var fresh1 = await db.Transactions.AsNoTracking().SingleAsync(t => t.Id == txn1.Id);
+        var fresh2 = await db.Transactions.AsNoTracking().SingleAsync(t => t.Id == txn2.Id);
+        Assert.Equal(categoryId, fresh1.CategoryId);
+        Assert.Equal(categoryId, fresh2.CategoryId);
+        Assert.Equal(CategorySource.AiAuto, fresh1.CategorySource);
+        Assert.Equal(CategorySource.AiAuto, fresh2.CategorySource);
+    }
+
+    private sealed class FakeBatchAiCategorizationService(Guid categoryId, int rateLimitFailuresBeforeSuccess)
+        : IBatchAiCategorizationService
+    {
+        private int _remaining429 = rateLimitFailuresBeforeSuccess;
+
+        public int BatchCallCount { get; private set; }
+
+        public Task<CategoryClassification> ClassifyAsync(Guid userId, Guid transactionId, CancellationToken ct) =>
+            throw new NotSupportedException("Batched path should be invoked.");
+
+        public Task<IReadOnlyDictionary<Guid, CategoryClassification>> ClassifyBatchAsync(
+            Guid userId,
+            IReadOnlyList<Guid> transactionIds,
+            CancellationToken ct)
+        {
+            BatchCallCount++;
+            if (_remaining429 > 0)
+            {
+                _remaining429--;
+                throw new HttpRequestException("Too Many Requests", null, System.Net.HttpStatusCode.TooManyRequests);
+            }
+
+            IReadOnlyDictionary<Guid, CategoryClassification> map = transactionIds.ToDictionary(
+                id => id,
+                _ => new CategoryClassification(categoryId, 0.95, "models/gemini-3.5-flash-lite", ClassificationSource.Llm, "batch"));
+            return Task.FromResult(map);
+        }
+    }
+
     /// <summary>
     /// Scripted <see cref="IAiCategorizationService"/> substitute: returns a canned
     /// <see cref="CategoryClassification"/> per transaction id (defaulting to None) and records every

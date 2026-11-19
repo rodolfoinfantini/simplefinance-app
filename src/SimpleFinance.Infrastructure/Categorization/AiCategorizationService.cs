@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -29,7 +30,7 @@ namespace SimpleFinance.Infrastructure.Categorization;
 /// thrown inside the embedding/LLM clients is caught so the cascade degrades to the best deterministic
 /// result and never crashes (T-16-07).
 /// </summary>
-public sealed class AiCategorizationService : IAiCategorizationService
+public sealed class AiCategorizationService : IBatchAiCategorizationService
 {
     /// <summary>Neighbours pulled per kNN query (16-RESEARCH §2 — starting point, Phase 20 tunes).</summary>
     private const int KnnNeighbors = 10;
@@ -39,6 +40,9 @@ public sealed class AiCategorizationService : IAiCategorizationService
 
     /// <summary>Confidence assigned to a Pluggy→Category mapping hit (near-certain, but not a user rule).</summary>
     private const double MappingConfidence = 0.95;
+
+    /// <summary>Max unique merchant/description groups sent in a single batched LLM prompt.</summary>
+    public const int LlmBatchSize = 40;
 
     private readonly SimpleFinanceDbContext _db;
     private readonly ICategorizationService _deterministic;
@@ -114,19 +118,22 @@ public sealed class AiCategorizationService : IAiCategorizationService
 
         try
         {
-            // --- Level 3: kNN vote over the user's trusted labels ---
-            var query = await GetQueryVectorAsync(userId, txn, ct);
-            if (query is not null)
+            // --- Level 3: kNN vote over the user's trusted labels (skip when user has 0 trusted embeddings) ---
+            if (await HasTrustedEmbeddingsAsync(userId, ct))
             {
-                var vote = await _voter.VoteAsync(userId, txn.Id, query, KnnNeighbors, ProximityFloorSim, ct);
-                if (vote is not null)
+                var query = await GetQueryVectorAsync(userId, txn, ct);
+                if (query is not null)
                 {
-                    return new CategoryClassification(
-                        vote.CategoryId,
-                        vote.Confidence,
-                        _options.OpenAiEmbeddingModel,
-                        ClassificationSource.Knn,
-                        null);
+                    var vote = await _voter.VoteAsync(userId, txn.Id, query, KnnNeighbors, ProximityFloorSim, ct);
+                    if (vote is not null)
+                    {
+                        return new CategoryClassification(
+                            vote.CategoryId,
+                            vote.Confidence,
+                            _options.OpenAiEmbeddingModel,
+                            ClassificationSource.Knn,
+                            null);
+                    }
                 }
             }
 
@@ -144,6 +151,306 @@ public sealed class AiCategorizationService : IAiCategorizationService
                 transactionId);
             return None();
         }
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, CategoryClassification>> ClassifyBatchAsync(
+        Guid userId,
+        IReadOnlyList<Guid> transactionIds,
+        CancellationToken ct)
+    {
+        var results = new Dictionary<Guid, CategoryClassification>(transactionIds.Count);
+        if (transactionIds.Count == 0)
+        {
+            return results;
+        }
+
+        var transactions = await _db.Transactions
+            .Where(t => t.UserId == userId && transactionIds.Contains(t.Id))
+            .ToListAsync(ct);
+
+        if (transactions.Count == 0)
+        {
+            return results;
+        }
+
+        var settings = await _db.UserSettings
+            .FirstOrDefaultAsync(s => s.UserId == userId, ct);
+
+        // --- Levels 1-2: deterministic rules + Pluggy mapping (per transaction, respects amount rules) ---
+        var unresolved = new List<Transaction>();
+        foreach (var txn in transactions)
+        {
+            var input = new CategorizationInput(
+                txn.Description,
+                txn.MerchantName,
+                txn.Amount,
+                txn.PluggyCategoryId,
+                txn.PluggyCategory);
+
+            var deterministic = await _deterministic.CategorizeAsync(userId, input, ct);
+
+            if (deterministic.Source == CategorySource.Rule && deterministic.CategoryId is Guid ruleCategory)
+            {
+                results[txn.Id] = new CategoryClassification(ruleCategory, 1.0, null, ClassificationSource.Rule, null);
+                continue;
+            }
+
+            if (deterministic.CategoryId is Guid mappingCategory)
+            {
+                results[txn.Id] = new CategoryClassification(mappingCategory, MappingConfidence, null, ClassificationSource.Mapping, null);
+                continue;
+            }
+
+            unresolved.Add(txn);
+        }
+
+        var aiOn = settings is { AiEnabled: true, AiCategorizationEnabled: true };
+        if (!aiOn || unresolved.Count == 0)
+        {
+            foreach (var txn in unresolved)
+            {
+                results[txn.Id] = None();
+            }
+
+            return results;
+        }
+
+        // Deduplicate unresolved transactions by redacted normalized signature so identical merchants
+        // (e.g. 200x "IFD*IFOOD") are embedded and sent to the LLM only ONCE.
+        var groups = new List<MerchantGroup>();
+        var groupByKey = new Dictionary<string, MerchantGroup>(StringComparer.Ordinal);
+        foreach (var txn in unresolved)
+        {
+            var redactedDesc = _redactor.Redact(txn.Description);
+            var redactedMerchant = _redactor.Redact(txn.MerchantName);
+            var key = BuildGroupKey(redactedDesc, redactedMerchant, txn.PluggyCategoryId, txn.PluggyCategory, txn.Type);
+
+            if (!groupByKey.TryGetValue(key, out var group))
+            {
+                group = new MerchantGroup(
+                    Representative: txn,
+                    RedactedDescription: redactedDesc,
+                    RedactedMerchant: redactedMerchant,
+                    Members: []);
+                groupByKey[key] = group;
+                groups.Add(group);
+            }
+
+            group.Members.Add(txn);
+        }
+
+        try
+        {
+            // --- Level 3: batched kNN vote (only when trusted embeddings exist) ---
+            var needLlm = new List<MerchantGroup>();
+            var canRunKnn = await HasTrustedEmbeddingsAsync(userId, ct) && await HasEmbeddingKeyAsync(ct);
+
+            if (canRunKnn)
+            {
+                var vectorsByGroup = await GetBatchQueryVectorsAsync(userId, groups, ct);
+                for (var i = 0; i < groups.Count; i++)
+                {
+                    var group = groups[i];
+                    if (vectorsByGroup is not null && vectorsByGroup[i] is Vector query)
+                    {
+                        var vote = await _voter.VoteAsync(userId, group.Representative.Id, query, KnnNeighbors, ProximityFloorSim, ct);
+                        if (vote is not null)
+                        {
+                            var classification = new CategoryClassification(
+                                vote.CategoryId,
+                                vote.Confidence,
+                                _options.OpenAiEmbeddingModel,
+                                ClassificationSource.Knn,
+                                null);
+                            foreach (var member in group.Members)
+                            {
+                                results[member.Id] = classification;
+                            }
+
+                            continue;
+                        }
+                    }
+
+                    needLlm.Add(group);
+                }
+            }
+            else
+            {
+                needLlm.AddRange(groups);
+            }
+
+            if (needLlm.Count == 0)
+            {
+                return results;
+            }
+
+            // --- Level 4: batched LLM classification (up to LlmBatchSize unique groups per call) ---
+            var categories = await _db.Categories
+                .Where(c => c.UserId == userId && !c.IsHidden)
+                .Select(c => new CategoryRef(c.Id, c.Name, c.Type.ToString()))
+                .ToListAsync(ct);
+
+            if (categories.Count == 0)
+            {
+                foreach (var group in needLlm)
+                {
+                    foreach (var member in group.Members)
+                    {
+                        results[member.Id] = None();
+                    }
+                }
+
+                return results;
+            }
+
+            var validCategoryIds = categories.Select(c => c.Id).ToHashSet();
+            var model = settings!.AiChatModel;
+
+            for (var offset = 0; offset < needLlm.Count; offset += LlmBatchSize)
+            {
+                var slice = needLlm.GetRange(offset, Math.Min(LlmBatchSize, needLlm.Count - offset));
+                var request = new LlmChatRequest(
+                    model,
+                    BuildBatchMessages(slice, categories),
+                    AiFeature.Categorization);
+
+                var llmResponse = await _llmClient.ChatAsync(request, ct);
+                var parsed = ParseBatchLlmJson(llmResponse.Content);
+
+                for (var idx = 0; idx < slice.Count; idx++)
+                {
+                    var group = slice[idx];
+                    CategoryClassification decision;
+                    if (parsed.TryGetValue(idx, out var item)
+                        && item.CategoryId is Guid candidate
+                        && validCategoryIds.Contains(candidate))
+                    {
+                        decision = new CategoryClassification(
+                            candidate,
+                            Math.Clamp(item.Confidence, 0.0, 1.0),
+                            model,
+                            ClassificationSource.Llm,
+                            item.Rationale);
+                    }
+                    else
+                    {
+                        decision = new CategoryClassification(
+                            null,
+                            parsed.TryGetValue(idx, out var rejected) ? Math.Clamp(rejected.Confidence, 0.0, 1.0) : 0.0,
+                            model,
+                            ClassificationSource.Llm,
+                            parsed.TryGetValue(idx, out var r) ? r.Rationale : null);
+                    }
+
+                    foreach (var member in group.Members)
+                    {
+                        results[member.Id] = decision;
+                    }
+                }
+            }
+        }
+        catch (AiBudgetExceededException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "AiCategorizationService batch degraded to deterministic-only for user {UserId}: AI monthly budget reached.",
+                userId);
+
+            foreach (var txn in unresolved)
+            {
+                results.TryAdd(txn.Id, None());
+            }
+        }
+
+        return results;
+    }
+
+    private async Task<bool> HasTrustedEmbeddingsAsync(Guid userId, CancellationToken ct)
+    {
+        // Under EF InMemory (unit tests), TransactionEmbeddings is not mapped and FakeKnnCategoryVoter
+        // handles level 3 directly. Under real Postgres (Npgsql), avoid calling /embeddings when the
+        // user has zero trusted embeddings for kNN to vote over.
+        if (!_db.Database.IsNpgsql())
+        {
+            return true;
+        }
+
+        return await (
+                from te in _db.TransactionEmbeddings
+                join t in _db.Transactions on te.TransactionId equals t.Id
+                where te.UserId == userId
+                      && t.CategoryId != null
+                      && (t.CategorySource == CategorySource.Rule
+                          || t.CategorySource == CategorySource.UserOverride
+                          || t.CategorySource == CategorySource.AiSuggested)
+                select te.Id)
+            .AnyAsync(ct);
+    }
+
+    private async Task<bool> HasEmbeddingKeyAsync(CancellationToken ct)
+    {
+        if (_keyProvider is null)
+        {
+            return true;
+        }
+
+        var openAiKey = await _keyProvider.GetOpenAiKeyAsync(ct);
+        return !string.IsNullOrWhiteSpace(openAiKey);
+    }
+
+    private async Task<Vector?[]?> GetBatchQueryVectorsAsync(
+        Guid userId,
+        IReadOnlyList<MerchantGroup> groups,
+        CancellationToken ct)
+    {
+        var vectors = new Vector?[groups.Count];
+        var missingIndices = new List<int>();
+        var missingTexts = new List<string>();
+
+        Dictionary<Guid, Vector>? storedByTxn = null;
+        if (_db.Database.IsNpgsql())
+        {
+            var repIds = groups.Select(g => g.Representative.Id).ToList();
+            storedByTxn = await _db.TransactionEmbeddings
+                .Where(te => te.UserId == userId && repIds.Contains(te.TransactionId))
+                .ToDictionaryAsync(te => te.TransactionId, te => te.Embedding, ct);
+        }
+
+        for (var i = 0; i < groups.Count; i++)
+        {
+            var group = groups[i];
+            if (storedByTxn is not null && storedByTxn.TryGetValue(group.Representative.Id, out var stored))
+            {
+                vectors[i] = stored;
+            }
+            else
+            {
+                missingIndices.Add(i);
+                missingTexts.Add($"{group.RedactedDescription} {group.RedactedMerchant}".Trim());
+            }
+        }
+
+        if (missingTexts.Count > 0)
+        {
+            try
+            {
+                var computed = await _embeddingClient.EmbedAsync(missingTexts, ct);
+                for (var j = 0; j < missingIndices.Count && j < computed.Length; j++)
+                {
+                    vectors[missingIndices[j]] = new Vector(computed[j]);
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "AiCategorizationService skipped batch kNN embeddings for user {UserId}; falling back to LLM.",
+                    userId);
+                return null;
+            }
+        }
+
+        return vectors;
     }
 
     /// <summary>
@@ -196,7 +503,7 @@ public sealed class AiCategorizationService : IAiCategorizationService
     {
         var categories = await _db.Categories
             .Where(c => c.UserId == userId && !c.IsHidden)
-            .Select(c => new CategoryRef(c.Id, c.Name))
+            .Select(c => new CategoryRef(c.Id, c.Name, c.Type.ToString()))
             .ToListAsync(ct);
 
         if (categories.Count == 0)
@@ -253,6 +560,38 @@ public sealed class AiCategorizationService : IAiCategorizationService
         };
     }
 
+    private static IReadOnlyList<LlmMessage> BuildBatchMessages(
+        IReadOnlyList<MerchantGroup> groups,
+        IReadOnlyList<CategoryRef> categories)
+    {
+        const string system =
+            "You categorize Brazilian bank transactions into the user's categories. " +
+            "For each input item (identified by integer \"id\"), pick the single best categoryId from \"categories\" " +
+            "(respecting Expense vs Income type), or null if none fits. " +
+            "Reply ONLY with a JSON array containing one object per input item: " +
+            "[{\"id\": 0, \"categoryId\": \"<guid or null>\", \"confidence\": 0..1, \"rationale\": \"<short pt-BR>\"}].";
+
+        var payload = new
+        {
+            categories = categories.Select(c => new { id = c.Id, name = c.Name, type = c.Type }),
+            transactions = groups.Select((g, i) => new
+            {
+                id = i,
+                description = g.RedactedDescription,
+                merchant = g.RedactedMerchant,
+                amount = g.Representative.Amount,
+                type = g.Representative.Type == TransactionType.Credit ? "income" : "expense",
+                pluggyCategory = g.Representative.PluggyCategory,
+            }),
+        };
+
+        return
+        [
+            new LlmMessage("system", system),
+            new LlmMessage("user", JsonSerializer.Serialize(payload)),
+        ];
+    }
+
     /// <summary>
     /// Defensively extracts the first JSON object from the model's answer (it may wrap the JSON in
     /// prose or fences) and reads categoryId/confidence/rationale. Returns null when unparseable.
@@ -276,29 +615,7 @@ public sealed class AiCategorizationService : IAiCategorizationService
         try
         {
             using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            Guid? categoryId = null;
-            if (root.TryGetProperty("categoryId", out var idEl)
-                && idEl.ValueKind == JsonValueKind.String
-                && Guid.TryParse(idEl.GetString(), out var g))
-            {
-                categoryId = g;
-            }
-
-            var confidence = 0.0;
-            if (root.TryGetProperty("confidence", out var cEl) && cEl.ValueKind == JsonValueKind.Number)
-            {
-                confidence = cEl.GetDouble();
-            }
-
-            string? rationale = null;
-            if (root.TryGetProperty("rationale", out var rEl) && rEl.ValueKind == JsonValueKind.String)
-            {
-                rationale = rEl.GetString();
-            }
-
-            return new LlmClassification(categoryId, confidence, rationale);
+            return ReadClassification(doc.RootElement);
         }
         catch (JsonException)
         {
@@ -306,10 +623,184 @@ public sealed class AiCategorizationService : IAiCategorizationService
         }
     }
 
+    /// <summary>
+    /// Defensively extracts the batch JSON array from the model's answer (handling bare arrays,
+    /// markdown fences, or object wrappers like <c>{"results":[...]}</c>). Returns a map of item
+    /// index → classification; malformed/missing entries are omitted.
+    /// </summary>
+    private static Dictionary<int, LlmClassification> ParseBatchLlmJson(string? content)
+    {
+        var map = new Dictionary<int, LlmClassification>();
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return map;
+        }
+
+        var trimmed = StripCodeFences(content);
+
+        JsonDocument? doc = null;
+        try
+        {
+            try
+            {
+                doc = JsonDocument.Parse(trimmed);
+            }
+            catch (JsonException)
+            {
+                var start = trimmed.IndexOf('[');
+                var end = trimmed.LastIndexOf(']');
+                if (start < 0 || end <= start)
+                {
+                    return map;
+                }
+
+                doc = JsonDocument.Parse(trimmed.Substring(start, end - start + 1));
+            }
+
+            JsonElement arrayEl = default;
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                arrayEl = doc.RootElement;
+            }
+            else if (doc.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.Array)
+                    {
+                        arrayEl = prop.Value;
+                        break;
+                    }
+                }
+            }
+
+            if (arrayEl.ValueKind != JsonValueKind.Array)
+            {
+                return map;
+            }
+
+            foreach (var item in arrayEl.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (!item.TryGetProperty("id", out var idxEl))
+                {
+                    continue;
+                }
+
+                int idx;
+                if (idxEl.ValueKind == JsonValueKind.Number && idxEl.TryGetInt32(out var numIdx))
+                {
+                    idx = numIdx;
+                }
+                else if (idxEl.ValueKind == JsonValueKind.String && int.TryParse(idxEl.GetString(), out var strIdx))
+                {
+                    idx = strIdx;
+                }
+                else
+                {
+                    continue;
+                }
+
+                map[idx] = ReadClassification(item);
+            }
+        }
+        catch (JsonException)
+        {
+            // Malformed LLM output — return whatever (if anything) was valid.
+        }
+        finally
+        {
+            doc?.Dispose();
+        }
+
+        return map;
+    }
+
+    private static string StripCodeFences(string raw)
+    {
+        var text = raw.Trim();
+        if (!text.StartsWith("```", StringComparison.Ordinal))
+        {
+            return text;
+        }
+
+        var firstNewline = text.IndexOf('\n');
+        if (firstNewline < 0)
+        {
+            return text;
+        }
+
+        text = text[(firstNewline + 1)..];
+        var closingFence = text.LastIndexOf("```", StringComparison.Ordinal);
+        if (closingFence >= 0)
+        {
+            text = text[..closingFence];
+        }
+
+        return text.Trim();
+    }
+
+    private static LlmClassification ReadClassification(JsonElement root)
+    {
+        Guid? categoryId = null;
+        if (root.TryGetProperty("categoryId", out var idEl)
+            && idEl.ValueKind == JsonValueKind.String
+            && Guid.TryParse(idEl.GetString(), out var g))
+        {
+            categoryId = g;
+        }
+
+        var confidence = 0.0;
+        if (root.TryGetProperty("confidence", out var cEl) && cEl.ValueKind == JsonValueKind.Number)
+        {
+            confidence = cEl.GetDouble();
+        }
+
+        string? rationale = null;
+        if (root.TryGetProperty("rationale", out var rEl) && rEl.ValueKind == JsonValueKind.String)
+        {
+            rationale = rEl.GetString();
+        }
+
+        return new LlmClassification(categoryId, confidence, rationale);
+    }
+
+    private static string BuildGroupKey(
+        string? redactedDescription,
+        string? redactedMerchant,
+        string? pluggyCategoryId,
+        string? pluggyCategory,
+        TransactionType type) =>
+        string.Concat(
+            NormalizeKeyPart(redactedDescription),
+            "|",
+            NormalizeKeyPart(redactedMerchant),
+            "|",
+            NormalizeKeyPart(pluggyCategoryId),
+            "|",
+            NormalizeKeyPart(pluggyCategory),
+            "|",
+            (int)type);
+
+    private static string NormalizeKeyPart(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : Regex.Replace(value.Trim().ToLowerInvariant(), @"\s+", " ");
+
     private static CategoryClassification None() =>
         new(null, 0.0, null, ClassificationSource.None, null);
 
-    private sealed record CategoryRef(Guid Id, string Name);
+    private sealed record CategoryRef(Guid Id, string Name, string Type);
 
     private sealed record LlmClassification(Guid? CategoryId, double Confidence, string? Rationale);
+
+    private sealed record MerchantGroup(
+        Transaction Representative,
+        string RedactedDescription,
+        string RedactedMerchant,
+        List<Transaction> Members);
 }

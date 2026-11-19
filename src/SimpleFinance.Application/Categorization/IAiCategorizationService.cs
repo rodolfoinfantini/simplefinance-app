@@ -18,3 +18,23 @@ public interface IAiCategorizationService
     /// </summary>
     Task<CategoryClassification> ClassifyAsync(Guid userId, Guid transactionId, CancellationToken ct);
 }
+
+/// <summary>
+/// Optional batch-classification capability implemented by <c>AiCategorizationService</c>.
+/// Processes a page/chunk of transactions at once: runs deterministic rules/mappings per row,
+/// deduplicates remaining rows by normalized redacted text, runs batched kNN embeddings only when
+/// trusted labels exist, and classifies unresolved unique merchants in batched LLM prompts.
+/// </summary>
+public interface IBatchAiCategorizationService : IAiCategorizationService
+{
+    /// <summary>
+    /// Classifies a batch of transactions for <paramref name="userId"/>. Returns a map of
+    /// <c>transactionId → CategoryClassification</c> for every transaction processed in this batch.
+    /// May throw <see cref="System.Net.Http.HttpRequestException"/> (e.g. 429 rate-limit) so the
+    /// caller can back off and retry the batch without losing earlier batches.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, CategoryClassification>> ClassifyBatchAsync(
+        Guid userId,
+        IReadOnlyList<Guid> transactionIds,
+        CancellationToken ct);
+}

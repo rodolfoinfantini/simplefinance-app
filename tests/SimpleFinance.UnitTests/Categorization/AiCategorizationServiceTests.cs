@@ -421,6 +421,69 @@ public class AiCategorizationServiceTests
         Assert.Equal(1, llm.ChatCallCount);
     }
 
+    [Fact]
+    public async Task ClassifyBatch_DeduplicatesIdenticalMerchants_SendsSingleBatchedLlmCall_AndRejectsHallucinatedIds()
+    {
+        await using var db = CreateDbContext();
+        var userId = SeedUser(db, aiEnabled: true, categorizationEnabled: true, chatModel: "models/gemini-3.5-flash-lite");
+        var alimentacao = SeedCategory(db, userId, "Alimentação");
+        var transporte = SeedCategory(db, userId, "Transporte");
+        var assinaturas = SeedCategory(db, userId, "Assinaturas");
+        SeedRule(db, userId, assinaturas, "spotify");
+
+        var spotify = SeedTransaction(db, userId, "SPOTIFY BR", "Spotify");
+        var ifood1 = SeedTransaction(db, userId, "IFD*IFOOD", "iFood");
+        var ifood2 = SeedTransaction(db, userId, "IFD*IFOOD  ", " iFood ");
+        var ifood3 = SeedTransaction(db, userId, "ifd*ifood", "IFOOD");
+        var uber1 = SeedTransaction(db, userId, "UBER *TRIP", "Uber");
+        var uber2 = SeedTransaction(db, userId, "UBER *TRIP", "Uber");
+        var mystery = SeedTransaction(db, userId, "COBRANCA XYZ", "Desconhecido");
+
+        var hallucinated = Guid.NewGuid();
+        var voter = new FakeKnnCategoryVoter { Result = null };
+        var llm = new FakeLlmClient
+        {
+            CannedContent = $$"""
+                ```json
+                [
+                  {"id": 0, "categoryId": "{{alimentacao}}", "confidence": 0.94, "rationale": "Delivery de comida"},
+                  {"id": 1, "categoryId": "{{transporte}}", "confidence": 0.89, "rationale": "Corrida de app"},
+                  {"id": 2, "categoryId": "{{hallucinated}}", "confidence": 0.99, "rationale": "Chute inválido"}
+                ]
+                ```
+                """,
+        };
+        var embedding = new FakeEmbeddingClient();
+
+        var ids = new[] { spotify.Id, ifood1.Id, ifood2.Id, ifood3.Id, uber1.Id, uber2.Id, mystery.Id };
+        var results = await CreateService(db, voter, llm, embedding, new EmptyKeyProvider())
+            .ClassifyBatchAsync(userId, ids, CancellationToken.None);
+
+        Assert.Equal(7, results.Count);
+        Assert.Equal(1, llm.ChatCallCount); // 6 unresolved transactions collapsed to 3 unique groups in ONE call
+        Assert.Equal(0, embedding.CallCount);
+
+        Assert.Equal(ClassificationSource.Rule, results[spotify.Id].Source);
+        Assert.Equal(assinaturas, results[spotify.Id].CategoryId);
+
+        foreach (var id in new[] { ifood1.Id, ifood2.Id, ifood3.Id })
+        {
+            Assert.Equal(ClassificationSource.Llm, results[id].Source);
+            Assert.Equal(alimentacao, results[id].CategoryId);
+            Assert.Equal(0.94, results[id].Confidence);
+        }
+
+        foreach (var id in new[] { uber1.Id, uber2.Id })
+        {
+            Assert.Equal(ClassificationSource.Llm, results[id].Source);
+            Assert.Equal(transporte, results[id].CategoryId);
+            Assert.Equal(0.89, results[id].Confidence);
+        }
+
+        Assert.Equal(ClassificationSource.Llm, results[mystery.Id].Source);
+        Assert.Null(results[mystery.Id].CategoryId);
+    }
+
     private sealed class EmptyKeyProvider : IAiKeyProvider
     {
         public Task<string?> GetDeepSeekKeyAsync(CancellationToken ct) => Task.FromResult<string?>(null);
