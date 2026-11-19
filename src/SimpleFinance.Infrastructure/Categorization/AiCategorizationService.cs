@@ -315,8 +315,9 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
                     AiFeature.Categorization);
 
                 var llmResponse = await _llmClient.ChatAsync(request, ct);
-                var parsed = ParseBatchLlmJson(llmResponse.Content);
+                var parsed = ParseBatchLlmJson(llmResponse.Content, categories, validCategoryIds);
 
+                var resolvedGroups = 0;
                 for (var idx = 0; idx < slice.Count; idx++)
                 {
                     var group = slice[idx];
@@ -325,6 +326,7 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
                         && item.CategoryId is Guid candidate
                         && validCategoryIds.Contains(candidate))
                     {
+                        resolvedGroups++;
                         decision = new CategoryClassification(
                             candidate,
                             Math.Clamp(item.Confidence, 0.0, 1.0),
@@ -346,6 +348,15 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
                     {
                         results[member.Id] = decision;
                     }
+                }
+
+                if (resolvedGroups == 0)
+                {
+                    _logger.LogWarning(
+                        "AiCategorizationService batch LLM call resolved 0/{GroupCount} groups (parsed {ParsedCount} entries, response length {Length}).",
+                        slice.Count,
+                        parsed.Count,
+                        llmResponse.Content?.Length ?? 0);
                 }
             }
         }
@@ -518,10 +529,11 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
             AiFeature.Categorization);
 
         var result = await _llmClient.ChatAsync(request, ct);
-        var parsed = ParseLlmJson(result.Content);
+        var validCategoryIds = categories.Select(c => c.Id).ToHashSet();
+        var parsed = ParseLlmJson(result.Content, categories, validCategoryIds);
 
         // T-16-05: reject any categoryId the model invented that is not one of THIS user's categories.
-        if (parsed?.CategoryId is Guid candidate && categories.Any(c => c.Id == candidate))
+        if (parsed?.CategoryId is Guid candidate && validCategoryIds.Contains(candidate))
         {
             return new CategoryClassification(candidate, parsed.Confidence, model, ClassificationSource.Llm, parsed.Rationale);
         }
@@ -531,24 +543,29 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
 
     private IReadOnlyList<LlmMessage> BuildMessages(Transaction txn, IReadOnlyList<CategoryRef> categories)
     {
+        // Use 1-based integer ids for categories on the wire: OpenAiCompatibleLlmClient runs
+        // PiiRedactor.Redact over every outbound message, and PiiRedactor.TokenLike() replaces
+        // 32+ char UUIDs with "«REDACTED»". Integer ids survive redaction intact and save tokens.
         const string system =
             "You categorize a Brazilian bank transaction into exactly one of the user's categories. " +
-            "Reply ONLY with a JSON object: {\"categoryId\": \"<id or null>\", \"confidence\": 0..1, " +
-            "\"rationale\": \"<short pt-BR>\"}. Use null for categoryId if none fits.";
+            "Reply ONLY with a JSON object using the integer \"id\" from \"categories\": " +
+            "{\"categoryId\": <integer id or null>, \"confidence\": 0..1, \"rationale\": \"<short pt-BR>\"}. " +
+            "Use null for categoryId if none fits.";
 
         // T-16-04: redact the free-text fields BEFORE they enter the prompt (defense in depth on top of
-        // the client's own redaction). Only category ids + names leave the VPS — no account/CPF fields.
+        // the client's own redaction). Only category index + name leave the VPS — no account/CPF/UUID fields.
         var description = _redactor.Redact(txn.Description);
         var merchant = _redactor.Redact(txn.MerchantName);
 
         var categoryList = JsonSerializer.Serialize(
-            categories.Select(c => new { id = c.Id, name = c.Name }));
+            categories.Select((c, i) => new { id = i + 1, name = c.Name, type = c.Type }));
 
         var user = new StringBuilder()
             .Append("{\"transaction\":{")
             .Append("\"description\":").Append(JsonSerializer.Serialize(description)).Append(',')
             .Append("\"merchant\":").Append(JsonSerializer.Serialize(merchant)).Append(',')
             .Append("\"amount\":").Append(JsonSerializer.Serialize(txn.Amount)).Append(',')
+            .Append("\"type\":").Append(JsonSerializer.Serialize(txn.Type == TransactionType.Credit ? "income" : "expense")).Append(',')
             .Append("\"pluggyCategory\":").Append(JsonSerializer.Serialize(txn.PluggyCategory))
             .Append("},\"categories\":").Append(categoryList).Append('}')
             .ToString();
@@ -564,16 +581,17 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
         IReadOnlyList<MerchantGroup> groups,
         IReadOnlyList<CategoryRef> categories)
     {
+        // 1-based integer category ids survive PiiRedactor.TokenLike() (which masks 32+ char UUIDs).
         const string system =
             "You categorize Brazilian bank transactions into the user's categories. " +
-            "For each input item (identified by integer \"id\"), pick the single best categoryId from \"categories\" " +
+            "For each transaction (identified by integer \"id\"), choose the single best matching integer \"id\" from \"categories\" " +
             "(respecting Expense vs Income type), or null if none fits. " +
-            "Reply ONLY with a JSON array containing one object per input item: " +
-            "[{\"id\": 0, \"categoryId\": \"<guid or null>\", \"confidence\": 0..1, \"rationale\": \"<short pt-BR>\"}].";
+            "Reply ONLY with a JSON array containing one object per transaction: " +
+            "[{\"id\": 0, \"categoryId\": 1, \"confidence\": 0.95, \"rationale\": \"<short pt-BR>\"}].";
 
         var payload = new
         {
-            categories = categories.Select(c => new { id = c.Id, name = c.Name, type = c.Type }),
+            categories = categories.Select((c, i) => new { id = i + 1, name = c.Name, type = c.Type }),
             transactions = groups.Select((g, i) => new
             {
                 id = i,
@@ -596,7 +614,10 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
     /// Defensively extracts the first JSON object from the model's answer (it may wrap the JSON in
     /// prose or fences) and reads categoryId/confidence/rationale. Returns null when unparseable.
     /// </summary>
-    private static LlmClassification? ParseLlmJson(string? content)
+    private static LlmClassification? ParseLlmJson(
+        string? content,
+        IReadOnlyList<CategoryRef> categories,
+        HashSet<Guid> validCategoryIds)
     {
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -615,7 +636,7 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
         try
         {
             using var doc = JsonDocument.Parse(json);
-            return ReadClassification(doc.RootElement);
+            return ReadClassification(doc.RootElement, categories, validCategoryIds);
         }
         catch (JsonException)
         {
@@ -628,7 +649,10 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
     /// markdown fences, or object wrappers like <c>{"results":[...]}</c>). Returns a map of item
     /// index → classification; malformed/missing entries are omitted.
     /// </summary>
-    private static Dictionary<int, LlmClassification> ParseBatchLlmJson(string? content)
+    private static Dictionary<int, LlmClassification> ParseBatchLlmJson(
+        string? content,
+        IReadOnlyList<CategoryRef> categories,
+        HashSet<Guid> validCategoryIds)
     {
         var map = new Dictionary<int, LlmClassification>();
         if (string.IsNullOrWhiteSpace(content))
@@ -705,7 +729,7 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
                     continue;
                 }
 
-                map[idx] = ReadClassification(item);
+                map[idx] = ReadClassification(item, categories, validCategoryIds);
             }
         }
         catch (JsonException)
@@ -744,14 +768,35 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
         return text.Trim();
     }
 
-    private static LlmClassification ReadClassification(JsonElement root)
+    private static LlmClassification ReadClassification(
+        JsonElement root,
+        IReadOnlyList<CategoryRef> categories,
+        HashSet<Guid> validCategoryIds)
     {
         Guid? categoryId = null;
-        if (root.TryGetProperty("categoryId", out var idEl)
-            && idEl.ValueKind == JsonValueKind.String
-            && Guid.TryParse(idEl.GetString(), out var g))
+        if (root.TryGetProperty("categoryId", out var idEl))
         {
-            categoryId = g;
+            if (idEl.ValueKind == JsonValueKind.Number
+                && idEl.TryGetInt32(out var numId)
+                && numId >= 1
+                && numId <= categories.Count)
+            {
+                categoryId = categories[numId - 1].Id;
+            }
+            else if (idEl.ValueKind == JsonValueKind.String)
+            {
+                var raw = idEl.GetString()?.Trim();
+                if (int.TryParse(raw, out var strNumId)
+                    && strNumId >= 1
+                    && strNumId <= categories.Count)
+                {
+                    categoryId = categories[strNumId - 1].Id;
+                }
+                else if (Guid.TryParse(raw, out var g) && validCategoryIds.Contains(g))
+                {
+                    categoryId = g;
+                }
+            }
         }
 
         var confidence = 0.0;

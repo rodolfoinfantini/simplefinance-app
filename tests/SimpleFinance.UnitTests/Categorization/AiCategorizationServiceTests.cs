@@ -484,6 +484,42 @@ public class AiCategorizationServiceTests
         Assert.Null(results[mystery.Id].CategoryId);
     }
 
+    [Fact]
+    public async Task ClassifyBatch_UsesShortIntegerCategoryIds_ThatSurvivePiiRedactor_AndMapsBackToGuids()
+    {
+        await using var db = CreateDbContext();
+        var userId = SeedUser(db, aiEnabled: true, categorizationEnabled: true, chatModel: "models/gemini-3.5-flash-lite");
+        var alimentacao = SeedCategory(db, userId, "Alimentação");
+        var transporte = SeedCategory(db, userId, "Transporte");
+
+        var ifood = SeedTransaction(db, userId, "IFD*IFOOD", "iFood");
+        var uber = SeedTransaction(db, userId, "UBER *TRIP", "Uber");
+        var invalid = SeedTransaction(db, userId, "LOJA DESCONHECIDA", "Outro");
+
+        var llm = new FakeLlmClient
+        {
+            CannedContent = """
+                [
+                  {"id": 0, "categoryId": 1, "confidence": 0.95, "rationale": "Comida"},
+                  {"id": 1, "categoryId": 2, "confidence": 0.90, "rationale": "Transporte"},
+                  {"id": 2, "categoryId": 99, "confidence": 0.99, "rationale": "Fora do range"}
+                ]
+                """,
+        };
+
+        var results = await CreateService(db, new FakeKnnCategoryVoter(), llm, new FakeEmbeddingClient(), new EmptyKeyProvider())
+            .ClassifyBatchAsync(userId, [ifood.Id, uber.Id, invalid.Id], CancellationToken.None);
+
+        // Verify the real PiiRedactor does not corrupt any category ID in the outgoing user prompt.
+        var sentUserMessage = llm.LastRequest!.Messages.Last().Content;
+        var redactedPrompt = new PiiRedactor().Redact(sentUserMessage);
+        Assert.DoesNotContain("REDACTED", redactedPrompt);
+
+        Assert.Equal(alimentacao, results[ifood.Id].CategoryId);
+        Assert.Equal(transporte, results[uber.Id].CategoryId);
+        Assert.Null(results[invalid.Id].CategoryId);
+    }
+
     private sealed class EmptyKeyProvider : IAiKeyProvider
     {
         public Task<string?> GetDeepSeekKeyAsync(CancellationToken ct) => Task.FromResult<string?>(null);
