@@ -630,6 +630,11 @@ namespace SimpleFinance.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true);
 
+                    b.Property<bool>("MarkAsTransfer")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<int>("MatchField")
                         .HasColumnType("integer");
 

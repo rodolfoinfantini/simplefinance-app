@@ -449,6 +449,7 @@ public sealed class SyncConnectionUseCase : ISyncReconciler
             PluggyCategoryId = pt.PluggyCategoryId,
             CategoryId = categorization.CategoryId,
             CategorySource = categorization.Source,
+            IsTransfer = categorization.MarkAsTransfer,
             InstallmentNumber = pt.InstallmentNumber,
             TotalInstallments = pt.TotalInstallments,
             TotalInstallmentsAmount = pt.TotalInstallmentsAmount,

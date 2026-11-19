@@ -31,6 +31,7 @@ export interface CategoryRuleResponse {
   categoryName: string
   priority: number
   isActive: boolean
+  markAsTransfer: boolean
 }
 
 export interface CategoryRuleWriteFields {
@@ -42,6 +43,7 @@ export interface CategoryRuleWriteFields {
   categoryId: string
   priority?: number
   isActive: boolean
+  markAsTransfer?: boolean
 }
 
 export interface CreateCategoryRuleRequest extends CategoryRuleWriteFields {
@@ -208,6 +210,8 @@ export function useApplyCategoryRuleNowMutation() {
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: ['budgets'] })
     },
   })
 }

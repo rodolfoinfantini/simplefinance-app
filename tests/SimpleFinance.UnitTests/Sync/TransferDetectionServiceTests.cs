@@ -49,7 +49,8 @@ public class TransferDetectionServiceTests
         DateTime date,
         string? paymentDataJson = null,
         bool isTransfer = false,
-        bool isTransferManualOverride = false)
+        bool isTransferManualOverride = false,
+        string description = "Test Transaction")
     {
         var now = DateTime.UtcNow;
         var transaction = new Transaction
@@ -59,7 +60,7 @@ public class TransferDetectionServiceTests
             AccountId = accountId,
             PluggyTransactionId = Guid.NewGuid().ToString(),
             Date = date,
-            Description = "Test Transaction",
+            Description = description,
             Amount = amount,
             Type = type,
             CurrencyCode = "BRL",
@@ -353,5 +354,60 @@ public class TransferDetectionServiceTests
         // The would-be counterpart also stays unflagged -- the overridden leg is excluded from
         // the candidate set entirely, so it's never offered as a match to begin with.
         Assert.False(updatedCredit.IsTransfer);
+    }
+
+    [Fact]
+    public async Task DetectTransfersForUserAsync_SameAccountCofrinhoPairsSameDaySameAmount_FlagsReservePairsAndIgnoresRefunds()
+    {
+        await using var db = CreateDbContext();
+        var userId = Guid.NewGuid();
+        var mercadoPago = SeedAccount(db, userId);
+        var day = new DateTime(2026, 11, 16, 12, 0, 0, DateTimeKind.Utc);
+
+        // Two distinct R$ 500 cofrinho operations on the exact same account and day:
+        var retiradoCredit = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Credit, 500m, day, description: "Dinheiro retirado Fatura");
+        var retiradoDebit = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Debit, -500m, day, description: "Dinheiro retirado");
+        var reservadoCredit = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Credit, 500m, day, description: "Dinheiro reservado");
+        var reservadoDebit = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Debit, -500m, day, description: "Dinheiro reservado Emergência");
+
+        // Unrelated same-day same-account purchase + refund — must NOT be flagged as internal transfer.
+        var compra = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Debit, -100m, day, description: "Compra Loja X");
+        var estorno = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Credit, 100m, day, description: "Estorno Loja X");
+
+        var sut = new TransferDetectionService(db);
+
+        var flaggedCount = await sut.DetectTransfersForUserAsync(userId, CancellationToken.None);
+
+        Assert.Equal(4, flaggedCount);
+        Assert.True((await db.Transactions.SingleAsync(t => t.Id == retiradoCredit.Id)).IsTransfer);
+        Assert.True((await db.Transactions.SingleAsync(t => t.Id == retiradoDebit.Id)).IsTransfer);
+        Assert.True((await db.Transactions.SingleAsync(t => t.Id == reservadoCredit.Id)).IsTransfer);
+        Assert.True((await db.Transactions.SingleAsync(t => t.Id == reservadoDebit.Id)).IsTransfer);
+        Assert.False((await db.Transactions.SingleAsync(t => t.Id == compra.Id)).IsTransfer);
+        Assert.False((await db.Transactions.SingleAsync(t => t.Id == estorno.Id)).IsTransfer);
+    }
+
+    [Fact]
+    public async Task DetectTransfersForUserAsync_SameAccountCofrinho_NotStolenByUnrelatedCrossAccountSameAmount()
+    {
+        await using var db = CreateDbContext();
+        var userId = Guid.NewGuid();
+        var mercadoPago = SeedAccount(db, userId);
+        var otherBank = SeedAccount(db, userId);
+        var day = new DateTime(2026, 11, 16, 12, 0, 0, DateTimeKind.Utc);
+
+        var retiradoCredit = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Credit, 500m, day, description: "Dinheiro retirado Fatura");
+        var retiradoDebit = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Debit, -500m, day, description: "Dinheiro retirado");
+        // Unrelated +500 credit on another bank the same day must NOT steal the Mercado Pago cofrinho debit.
+        var unrelatedCredit = SeedTransaction(db, userId, otherBank.Id, TransactionType.Credit, 500m, day, description: "Pix recebido Joao");
+
+        var sut = new TransferDetectionService(db);
+
+        var flaggedCount = await sut.DetectTransfersForUserAsync(userId, CancellationToken.None);
+
+        Assert.Equal(2, flaggedCount);
+        Assert.True((await db.Transactions.SingleAsync(t => t.Id == retiradoCredit.Id)).IsTransfer);
+        Assert.True((await db.Transactions.SingleAsync(t => t.Id == retiradoDebit.Id)).IsTransfer);
+        Assert.False((await db.Transactions.SingleAsync(t => t.Id == unrelatedCredit.Id)).IsTransfer);
     }
 }

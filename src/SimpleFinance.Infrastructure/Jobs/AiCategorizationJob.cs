@@ -307,6 +307,10 @@ public sealed class AiCategorizationJob
             txn.CategorySource = CategorySource.AiAuto;
             txn.CategoryConfidence = decision.Confidence;
             txn.CategoryModel = decision.Model;
+            if (decision.MarkAsTransfer && !txn.IsTransferManualOverride)
+            {
+                txn.IsTransfer = true;
+            }
             txn.UpdatedAt = now;
         }
         else

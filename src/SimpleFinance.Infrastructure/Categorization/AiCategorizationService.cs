@@ -101,7 +101,7 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
 
         if (deterministic.Source == CategorySource.Rule && deterministic.CategoryId is Guid ruleCategory)
         {
-            return new CategoryClassification(ruleCategory, 1.0, null, ClassificationSource.Rule, null);
+            return new CategoryClassification(ruleCategory, 1.0, null, ClassificationSource.Rule, null, deterministic.MarkAsTransfer);
         }
 
         if (deterministic.CategoryId is Guid mappingCategory)
@@ -191,7 +191,7 @@ public sealed class AiCategorizationService : IBatchAiCategorizationService
 
             if (deterministic.Source == CategorySource.Rule && deterministic.CategoryId is Guid ruleCategory)
             {
-                results[txn.Id] = new CategoryClassification(ruleCategory, 1.0, null, ClassificationSource.Rule, null);
+                results[txn.Id] = new CategoryClassification(ruleCategory, 1.0, null, ClassificationSource.Rule, null, deterministic.MarkAsTransfer);
                 continue;
             }
 

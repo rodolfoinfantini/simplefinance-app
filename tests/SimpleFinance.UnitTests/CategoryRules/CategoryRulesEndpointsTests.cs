@@ -272,6 +272,51 @@ public class CategoryRulesEndpointsTests
         Assert.Equal(CategorySource.Rule, updated.CategorySource);
     }
 
+    [Fact]
+    public async Task CreateAndApplyNow_RuleWithMarkAsTransfer_FlagsMatchesAndRespectsManualTransferOverride()
+    {
+        using var factory = new CategoryRulesApiFactory();
+        using var client = factory.CreateClient();
+        var (accessToken, userId) = await SetupAndLoginAsync(client);
+        var category = await SeedCategoryAsync(factory, userId, "Transferências");
+        var (_, account) = await SeedConnectionAndAccountAsync(factory, userId, "Mercado Pago");
+
+        var cofrinho = await SeedTransactionAsync(
+            factory, userId, account.Id, "Dinheiro retirado Fatura", null, 500m, CategorySource.SystemMapping, null);
+        var manualNonTransfer = await SeedTransactionAsync(
+            factory, userId, account.Id, "Dinheiro retirado Manual", null, 500m, CategorySource.SystemMapping, null);
+        using (var overrideScope = factory.Services.CreateScope())
+        {
+            var overrideDb = overrideScope.ServiceProvider.GetRequiredService<SimpleFinanceDbContext>();
+            var row = await overrideDb.Transactions.FirstAsync(t => t.Id == manualNonTransfer.Id);
+            row.IsTransfer = false;
+            row.IsTransferManualOverride = true;
+            await overrideDb.SaveChangesAsync();
+        }
+
+        var createResponse = await client.SendAsync(AuthedPost(
+            "/api/category-rules", accessToken,
+            new { matchField = "Description", matchOperator = "Contains", matchValue = "Dinheiro retirado", categoryId = category.Id, isActive = true, markAsTransfer = true }));
+
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(created.GetProperty("markAsTransfer").GetBoolean());
+        var ruleId = created.GetProperty("id").GetGuid();
+
+        var applyResponse = await client.SendAsync(AuthedPost($"/api/category-rules/{ruleId}/apply-now", accessToken, new { }));
+        Assert.Equal(HttpStatusCode.OK, applyResponse.StatusCode);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SimpleFinanceDbContext>();
+        var updatedCofrinho = await db.Transactions.FirstAsync(t => t.Id == cofrinho.Id);
+        var updatedManual = await db.Transactions.FirstAsync(t => t.Id == manualNonTransfer.Id);
+
+        Assert.Equal(category.Id, updatedCofrinho.CategoryId);
+        Assert.True(updatedCofrinho.IsTransfer);
+        Assert.Equal(category.Id, updatedManual.CategoryId);
+        Assert.False(updatedManual.IsTransfer);
+    }
+
     private static async Task<(string AccessToken, Guid UserId)> SetupAndLoginAsync(HttpClient client)
     {
         await client.PostAsJsonAsync("/api/auth/setup", new { name = "Owner", email = SetupEmail, password = SetupPassword });

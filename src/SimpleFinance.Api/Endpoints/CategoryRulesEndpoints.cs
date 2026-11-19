@@ -97,6 +97,7 @@ public static class CategoryRulesEndpoints
             CategoryId = command.CategoryId,
             Priority = priority,
             IsActive = command.IsActive,
+            MarkAsTransfer = command.MarkAsTransfer,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -142,6 +143,7 @@ public static class CategoryRulesEndpoints
         rule.AmountMax = command.AmountMax;
         rule.CategoryId = command.CategoryId;
         rule.IsActive = command.IsActive;
+        rule.MarkAsTransfer = command.MarkAsTransfer;
         rule.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
@@ -344,6 +346,10 @@ public static class CategoryRulesEndpoints
 
             transaction.CategoryId = rule.CategoryId;
             transaction.CategorySource = CategorySource.Rule;
+            if (rule.MarkAsTransfer && !transaction.IsTransferManualOverride)
+            {
+                transaction.IsTransfer = true;
+            }
             transaction.UpdatedAt = now;
             updatedCount++;
         }
@@ -372,7 +378,8 @@ public static class CategoryRulesEndpoints
                 x.Rule.CategoryId,
                 category != null ? category.Name : null,
                 x.Rule.Priority,
-                x.Rule.IsActive))
+                x.Rule.IsActive,
+                x.Rule.MarkAsTransfer))
             .ToListAsync(ct);
     }
 
@@ -386,7 +393,8 @@ public static class CategoryRulesEndpoints
         rule.CategoryId,
         categoryName,
         rule.Priority,
-        rule.IsActive);
+        rule.IsActive,
+        rule.MarkAsTransfer);
 
     // Threads the authenticated caller's UserId into FluentValidation's RootContextData so a
     // DB-dependent MustAsync rule (CreateCategoryRuleValidator/UpdateCategoryRuleValidator/
@@ -419,7 +427,8 @@ public static class CategoryRulesEndpoints
         Guid CategoryId,
         string? CategoryName,
         int Priority,
-        bool IsActive);
+        bool IsActive,
+        bool MarkAsTransfer);
 }
 
 /// <summary>

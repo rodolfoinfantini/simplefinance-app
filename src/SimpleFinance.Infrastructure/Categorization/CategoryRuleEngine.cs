@@ -43,7 +43,7 @@ public sealed class CategoryRuleEngine : ICategorizationService
 
         if (matched is not null)
         {
-            return new CategorizationResult(matched.CategoryId, CategorySource.Rule);
+            return new CategorizationResult(matched.CategoryId, CategorySource.Rule, matched.MarkAsTransfer);
         }
 
         var mappingCategoryId = await ResolveMappingCategoryIdAsync(input, ct);

@@ -39,4 +39,10 @@ public class CategoryRule : UserOwnedEntity
     /// targeted directly by the "apply now" retroactive action (04-05).
     /// </summary>
     public bool IsActive { get; set; }
+
+    /// <summary>
+    /// When true, matching transactions are also flagged as internal transfers (<c>IsTransfer = true</c>),
+    /// excluding them from income/expense/budget totals (respecting <c>IsTransferManualOverride</c>).
+    /// </summary>
+    public bool MarkAsTransfer { get; set; }
 }

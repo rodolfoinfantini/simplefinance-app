@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import {
   Alert,
+  Badge,
   Button,
   Card,
   CardBody,
@@ -268,7 +269,14 @@ export function RulesPage() {
                         </div>
                       </td>
                       <td>{buildMatchSummary(rule, t)}</td>
-                      <td>{rule.categoryName}</td>
+                      <td>
+                        <span>{rule.categoryName}</span>
+                        {rule.markAsTransfer && (
+                          <Badge bg="info" className="ms-2">
+                            {t('table.transferBadge')}
+                          </Badge>
+                        )}
+                      </td>
                       <td>
                         <Form.Check
                           type="switch"

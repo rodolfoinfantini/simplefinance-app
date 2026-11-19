@@ -24,7 +24,7 @@ public class CategoryRuleEngineTests
     private static CategoryRule SeedRule(
         SimpleFinanceDbContext db, Guid userId, Guid categoryId,
         RuleMatchField field, RuleMatchOperator op, string? matchValue,
-        int priority, bool isActive = true)
+        int priority, bool isActive = true, bool markAsTransfer = false)
     {
         var now = DateTime.UtcNow;
         var rule = new CategoryRule
@@ -37,6 +37,7 @@ public class CategoryRuleEngineTests
             CategoryId = categoryId,
             Priority = priority,
             IsActive = isActive,
+            MarkAsTransfer = markAsTransfer,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -185,5 +186,25 @@ public class CategoryRuleEngineTests
 
         Assert.Null(result.CategoryId);
         Assert.Equal(CategorySource.SystemMapping, result.Source);
+    }
+
+    [Fact]
+    public async Task CategorizeAsync_MatchingRuleWithMarkAsTransfer_PropagatesMarkAsTransferFlag()
+    {
+        await using var db = CreateDbContext();
+        var userId = Guid.NewGuid();
+        var transferCategoryId = Guid.NewGuid();
+
+        SeedRule(
+            db, userId, transferCategoryId,
+            RuleMatchField.Description, RuleMatchOperator.Contains, "Dinheiro retirado",
+            priority: 1, markAsTransfer: true);
+
+        var sut = new CategoryRuleEngine(db);
+        var result = await sut.CategorizeAsync(userId, CreateInput(description: "Dinheiro retirado Fatura"), CancellationToken.None);
+
+        Assert.Equal(transferCategoryId, result.CategoryId);
+        Assert.Equal(CategorySource.Rule, result.Source);
+        Assert.True(result.MarkAsTransfer);
     }
 }

@@ -16,4 +16,5 @@ public sealed record CreateCategoryRuleCommand(
     decimal? AmountMax,
     Guid CategoryId,
     int? Priority,
-    bool IsActive);
+    bool IsActive,
+    bool MarkAsTransfer = false);

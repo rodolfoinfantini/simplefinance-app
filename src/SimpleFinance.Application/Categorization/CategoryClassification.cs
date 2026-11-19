@@ -27,7 +27,8 @@ public sealed record CategoryClassification(
     double Confidence,
     string? Model,
     ClassificationSource Source,
-    string? Rationale);
+    string? Rationale,
+    bool MarkAsTransfer = false);
 
 /// <summary>Which level of the 4-step cascade produced a <see cref="CategoryClassification"/>.</summary>
 public enum ClassificationSource

@@ -41,6 +41,7 @@ function makeRuleFormSchema(t: TFunction) {
       amountMin: z.string().optional(),
       amountMax: z.string().optional(),
       categoryId: z.string().min(1, t('dialog.errors.categoryRequired')),
+      markAsTransfer: z.boolean(),
     })
     .superRefine((values, ctx) => {
       if (values.matchOperator === 'RANGE') {
@@ -178,6 +179,7 @@ export function RuleFormDialog({ show, onHide, categories, editTarget, accessTok
       amountMin: '',
       amountMax: '',
       categoryId: '',
+      markAsTransfer: false,
     },
   })
 
@@ -192,6 +194,7 @@ export function RuleFormDialog({ show, onHide, categories, editTarget, accessTok
         amountMin: editTarget.amountMin != null ? String(editTarget.amountMin) : '',
         amountMax: editTarget.amountMax != null ? String(editTarget.amountMax) : '',
         categoryId: editTarget.categoryId,
+        markAsTransfer: editTarget.markAsTransfer ?? false,
       })
     } else {
       form.reset({
@@ -201,6 +204,7 @@ export function RuleFormDialog({ show, onHide, categories, editTarget, accessTok
         amountMin: '',
         amountMax: '',
         categoryId: '',
+        markAsTransfer: false,
       })
     }
     setTestResult(null)
@@ -229,7 +233,7 @@ export function RuleFormDialog({ show, onHide, categories, editTarget, accessTok
   useEffect(() => {
     if (!show) return
 
-    const draft = buildTestDraft({ matchField, matchOperator, matchValue, amountMin, amountMax, categoryId })
+    const draft = buildTestDraft({ matchField, matchOperator, matchValue, amountMin, amountMax, categoryId, markAsTransfer: false })
     if (!draft) {
       setTestResult(null)
       return
@@ -263,6 +267,7 @@ export function RuleFormDialog({ show, onHide, categories, editTarget, accessTok
       amountMax: range ? parseAmount(values.amountMax) : null,
       categoryId: values.categoryId,
       isActive: editTarget?.isActive ?? true,
+      markAsTransfer: values.markAsTransfer,
     }
 
     try {
@@ -372,6 +377,24 @@ export function RuleFormDialog({ show, onHide, categories, editTarget, accessTok
             {form.formState.errors.categoryId && (
               <div className="text-danger fs-xs mt-1">{form.formState.errors.categoryId.message}</div>
             )}
+          </div>
+
+          <div className="mb-3">
+            <Controller
+              control={form.control}
+              name="markAsTransfer"
+              render={({ field }) => (
+                <Form.Check
+                  type="switch"
+                  id="rule-mark-as-transfer"
+                  label={t('dialog.fields.markAsTransfer')}
+                  checked={field.value}
+                  onChange={(event) => field.onChange(event.target.checked)}
+                  onBlur={field.onBlur}
+                />
+              )}
+            />
+            <p className="text-muted fs-xs mt-1 mb-0">{t('dialog.markAsTransferHint')}</p>
           </div>
 
           <div className="rounded border p-3">

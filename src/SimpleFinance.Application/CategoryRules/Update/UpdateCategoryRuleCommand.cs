@@ -13,4 +13,5 @@ public sealed record UpdateCategoryRuleCommand(
     decimal? AmountMin,
     decimal? AmountMax,
     Guid CategoryId,
-    bool IsActive);
+    bool IsActive,
+    bool MarkAsTransfer = false);

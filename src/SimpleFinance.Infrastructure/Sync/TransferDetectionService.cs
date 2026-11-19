@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using SimpleFinance.Application.Sync;
 using SimpleFinance.Domain.Entities;
@@ -58,6 +61,7 @@ public sealed class TransferDetectionService : ITransferDetectionService
         var flaggedIds = new HashSet<Guid>();
 
         DetectByPaymentData(candidates, flaggedIds);
+        DetectSameAccountReserves(candidates, flaggedIds);
         DetectByAmountDateFallback(candidates, flaggedIds);
 
         if (flaggedIds.Count == 0)
@@ -159,6 +163,123 @@ public sealed class TransferDetectionService : ITransferDetectionService
                 flaggedIds.Add(matches[0].Id);
             }
         }
+    }
+
+    /// <summary>
+    /// Known accent-folded, lowercased keywords for same-account savings/reserve vaults
+    /// (e.g. Mercado Pago Cofrinhos "Dinheiro retirado" / "Dinheiro reservado", Nubank Caixinhas,
+    /// PicPay/Inter/Itaú Cofrinhos). Ordered most-specific first so same-day pairs of different
+    /// operations (e.g. a R$ 500 "Dinheiro retirado" pair AND a R$ 500 "Dinheiro reservado" pair
+    /// on the exact same date and account) pair unambiguously within their own family.
+    /// </summary>
+    private static readonly string[] SameAccountReserveFamilies =
+    [
+        "dinheiro retirado",
+        "dinheiro reservado",
+        "dinheiro guardado",
+        "dinheiro resgatado",
+        "resgate caixinha",
+        "guardado na caixinha",
+        "resgate da caixinha",
+        "aplicacao rdb",
+        "resgate rdb",
+        "cofrinho",
+        "caixinha",
+    ];
+
+    /// <summary>
+    /// Third pass: detects internal reserve/vault movements posted as opposite-sign pairs on the
+    /// SAME account and SAME calendar day (e.g. Mercado Pago Cofrinhos emitting
+    /// "-500 Dinheiro retirado" + "+500 Dinheiro retirado Fatura" or
+    /// "-500 Dinheiro reservado Emergência" + "+500 Dinheiro reservado").
+    /// Requires both legs to share the same reserve keyword family so ordinary refunds on the same
+    /// account are never falsely flagged.
+    /// </summary>
+    private static void DetectSameAccountReserves(List<Transaction> candidates, HashSet<Guid> flaggedIds)
+    {
+        var normalizedDesc = candidates.ToDictionary(t => t.Id, t => NormalizeDescription(t.Description));
+        var familyById = candidates.ToDictionary(t => t.Id, t => ResolveReserveFamily(normalizedDesc[t.Id]));
+
+        foreach (var debit in candidates.Where(t => t.Type == TransactionType.Debit))
+        {
+            if (flaggedIds.Contains(debit.Id))
+            {
+                continue;
+            }
+
+            var family = familyById[debit.Id];
+            if (family is null)
+            {
+                continue;
+            }
+
+            var debitDesc = normalizedDesc[debit.Id];
+            var debitDay = debit.Date.Date;
+            var debitAmount = Math.Abs(debit.Amount);
+
+            var sameFamilyCredits = candidates.Where(credit =>
+                    credit.Id != debit.Id
+                    && !flaggedIds.Contains(credit.Id)
+                    && credit.Type == TransactionType.Credit
+                    && credit.AccountId == debit.AccountId
+                    && (credit.Date.Date == debitDay || Math.Abs((credit.Date - debit.Date).TotalMinutes) <= 10)
+                    && Math.Abs(credit.Amount) == debitAmount
+                    && string.Equals(familyById[credit.Id], family, StringComparison.Ordinal))
+                .ToList();
+
+            if (sameFamilyCredits.Count == 0)
+            {
+                continue;
+            }
+
+            // Prefer a pair where one description is a prefix of the other (e.g. "dinheiro retirado"
+            // <-> "dinheiro retirado fatura"), then fall back to the first matching credit in the same family.
+            var match = sameFamilyCredits.FirstOrDefault(c =>
+                normalizedDesc[c.Id].StartsWith(debitDesc, StringComparison.Ordinal)
+                || debitDesc.StartsWith(normalizedDesc[c.Id], StringComparison.Ordinal))
+                ?? sameFamilyCredits[0];
+
+            flaggedIds.Add(debit.Id);
+            flaggedIds.Add(match.Id);
+        }
+    }
+
+    private static string? ResolveReserveFamily(string normalizedDescription)
+    {
+        if (string.IsNullOrEmpty(normalizedDescription))
+        {
+            return null;
+        }
+
+        foreach (var family in SameAccountReserveFamilies)
+        {
+            if (normalizedDescription.Contains(family, StringComparison.Ordinal))
+            {
+                return family;
+            }
+        }
+
+        return null;
+    }
+
+    private static string NormalizeDescription(string? description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            return string.Empty;
+        }
+
+        var decomposed = description.Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder(decomposed.Length);
+        foreach (var ch in decomposed)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
+            {
+                sb.Append(char.ToLowerInvariant(ch));
+            }
+        }
+
+        return Regex.Replace(sb.ToString().Trim(), @"\s+", " ");
     }
 
     /// <summary>Never throws on malformed/unexpected-shape JSON (T-03-04's mitigation) -- returns

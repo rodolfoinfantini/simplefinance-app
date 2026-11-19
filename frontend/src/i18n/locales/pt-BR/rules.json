@@ -13,7 +13,8 @@
     "actionsLabel": "Ações da regra",
     "applyNow": "Aplicar agora",
     "activate": "Ativar regra",
-    "deactivate": "Desativar regra"
+    "deactivate": "Desativar regra",
+    "transferBadge": "Transferência interna"
   },
   "fields": {
     "DESCRIPTION": "Descrição",
@@ -80,8 +81,10 @@
       "min": "Mín.",
       "max": "Máx.",
       "value": "Valor",
-      "category": "Categoria"
+      "category": "Categoria",
+      "markAsTransfer": "Marcar como transferência interna"
     },
+    "markAsTransferHint": "Exclui as transações correspondentes dos totais de receita, despesa e orçamento (útil para cofrinhos e reservas).",
     "regexHint": "Avançado — expressão regular",
     "categoryPlaceholder": "Escolha uma categoria",
     "errors": {

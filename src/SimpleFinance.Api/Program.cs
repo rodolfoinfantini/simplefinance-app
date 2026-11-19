@@ -199,6 +199,11 @@ try
     builder.Services.AddScoped<CategorySeeder>();
     builder.Services.AddHostedService<CategorySeedStartupTask>();
 
+    // --- Transfer detection backstop: runs ITransferDetectionService once at boot (idempotent,
+    // respects IsTransferManualOverride) so newly added heuristics (e.g. same-account cofrinhos)
+    // clean historical transactions immediately on deploy -- before recurring/alert boot passes.
+    builder.Services.AddHostedService<TransferDetectionStartupTask>();
+
     // --- Net worth snapshot backstop (06-04, INV-04): writes an initial NetWorthSnapshot at boot
     // so the evolution chart has data immediately, not just after the first scheduled cron run.
     // NetWorthSnapshotJob itself is registered scoped via AddSyncJobs() above.

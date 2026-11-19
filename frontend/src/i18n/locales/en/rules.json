@@ -13,7 +13,8 @@
     "actionsLabel": "Rule actions",
     "applyNow": "Apply now",
     "activate": "Activate rule",
-    "deactivate": "Deactivate rule"
+    "deactivate": "Deactivate rule",
+    "transferBadge": "Internal transfer"
   },
   "fields": {
     "DESCRIPTION": "Description",
@@ -80,8 +81,10 @@
       "min": "Min",
       "max": "Max",
       "value": "Value",
-      "category": "Category"
+      "category": "Category",
+      "markAsTransfer": "Mark as internal transfer"
     },
+    "markAsTransferHint": "Excludes matching transactions from income, expense, and budget totals (useful for savings vaults/reserves).",
     "regexHint": "Advanced — regular expression",
     "categoryPlaceholder": "Choose a category",
     "errors": {

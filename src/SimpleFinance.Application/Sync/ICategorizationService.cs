@@ -29,4 +29,4 @@ public interface ICategorizationService
 /// </summary>
 public sealed record CategorizationInput(string Description, string? MerchantName, decimal Amount, string? PluggyCategoryId, string? PluggyCategory);
 
-public sealed record CategorizationResult(Guid? CategoryId, CategorySource Source);
+public sealed record CategorizationResult(Guid? CategoryId, CategorySource Source, bool MarkAsTransfer = false);

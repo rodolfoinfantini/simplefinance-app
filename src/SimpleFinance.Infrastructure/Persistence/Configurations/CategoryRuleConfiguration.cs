@@ -20,6 +20,9 @@ public class CategoryRuleConfiguration : IEntityTypeConfiguration<CategoryRule>
         builder.Property(r => r.IsActive)
             .HasDefaultValue(true);
 
+        builder.Property(r => r.MarkAsTransfer)
+            .HasDefaultValue(false);
+
         builder.HasIndex(r => r.UserId);
 
         // The exact access pattern 04-04's ordered rule lookup and 04-05's list/reorder
