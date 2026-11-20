@@ -171,6 +171,31 @@ public class AccountsEndpointsTests
         Assert.False(untouched.IsHidden);
     }
 
+    [Fact]
+    public async Task GetAccounts_CreditCardWithNullLastStatementBalance_FallsBackToAccountBalance()
+    {
+        using var factory = new AccountsApiFactory();
+        using var client = factory.CreateClient();
+        var (accessToken, userId) = await SetupAndLoginAsync(client);
+
+        var connection = await SeedConnectionAsync(factory, userId, "Mercado Pago", "item-mp");
+        var (account, detail) = await SeedCreditAccountAsync(factory, userId, connection.Id, "Mercado Pago", 12373.44m);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SimpleFinanceDbContext>();
+            var tracked = await db.CreditCardDetails.SingleAsync(c => c.Id == detail.Id);
+            tracked.LastStatementBalance = null;
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.SendAsync(AuthedGet("/api/accounts", accessToken));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var card = body.EnumerateArray().Single(a => a.GetProperty("id").GetString() == account.Id.ToString());
+        Assert.Equal(12373.44m, card.GetProperty("creditCard").GetProperty("lastStatementBalance").GetDecimal());
+    }
+
     private static async Task<(string AccessToken, Guid UserId)> SetupAndLoginAsync(HttpClient client)
     {
         await client.PostAsJsonAsync("/api/auth/setup", new { name = "Owner", email = SetupEmail, password = SetupPassword });

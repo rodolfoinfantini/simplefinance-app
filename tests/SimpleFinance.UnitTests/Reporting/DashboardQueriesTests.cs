@@ -206,6 +206,36 @@ public class DashboardQueriesTests
     }
 
     [Fact]
+    public async Task GetTotalsAndComposition_CreditCardWithPositiveBalanceAndNullLastStatementBalance_SubtractedAsDebtNotAddedToAccounts()
+    {
+        var userId = Guid.NewGuid();
+        var periodStart = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+        var periodEnd = new DateTime(2026, 6, 30, 23, 59, 59, DateTimeKind.Utc);
+
+        await using var db = CreateDbContext();
+        var bankAccount = NewAccount(userId, AccountType.Bank, balance: 751.31m);
+        var creditCard = NewAccount(userId, AccountType.Credit, balance: 14673.06m);
+        db.Accounts.AddRange(bankAccount, creditCard);
+        db.CreditCardDetails.Add(NewCreditCardDetail(creditCard.Id, lastStatementBalance: null));
+        var investment = NewInvestment(userId, value: 43.17m);
+        investment.Balance = 654.01m;
+        db.Investments.Add(investment);
+        await db.SaveChangesAsync();
+
+        var queries = CreateQueries();
+        var totals = await queries.GetTotalsAsync(userId, periodStart, periodEnd, CancellationToken.None);
+        var composition = await queries.GetNetWorthCompositionAsync(userId, CancellationToken.None);
+
+        Assert.Equal(751.31m, totals.TotalBalance);
+        Assert.Equal(14673.06m, totals.TotalCardDebt);
+        Assert.Equal(751.31m + 654.01m - 14673.06m, totals.NetWorth);
+        Assert.Equal(751.31m, composition.AccountsBalance);
+        Assert.Equal(654.01m, composition.InvestmentsBalance);
+        Assert.Equal(14673.06m, composition.CreditCardDebt);
+        Assert.Equal(totals.NetWorth, composition.NetWorth);
+    }
+
+    [Fact]
     public async Task GetCategorySpendAsync_ExcludesTransfer_EvenWhenTypeIsDebit()
     {
         var userId = Guid.NewGuid();

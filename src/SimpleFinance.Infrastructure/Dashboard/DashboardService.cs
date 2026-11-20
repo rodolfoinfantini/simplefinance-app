@@ -228,7 +228,7 @@ public sealed class DashboardService(SimpleFinanceDbContext db, DashboardQueries
                 x.Connection == null ? null : x.Connection.InstitutionName,
                 x.Account.Name,
                 x.Card.BalanceDueDate!.Value,
-                x.Card.LastStatementBalance))
+                x.Card.LastStatementBalance ?? x.Account.Balance))
             .ToList();
 
         return new UpcomingDueDatesResult(items);

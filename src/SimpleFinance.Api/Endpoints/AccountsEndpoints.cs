@@ -117,7 +117,7 @@ public static class AccountsEndpoints
                 card.BalanceCloseDate,
                 card.BalanceDueDate,
                 card.MinimumPayment,
-                card.LastStatementBalance,
+                card.LastStatementBalance ?? a.Balance,
                 card.Status.ToString(),
                 card.HolderType));
 
