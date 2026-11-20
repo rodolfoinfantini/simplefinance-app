@@ -12,6 +12,7 @@
   },
   "table": {
     "description": "Descrição",
+    "purchaseDate": "Data da compra",
     "card": "Cartão",
     "category": "Categoria",
     "installment": "Parcela (x/y)",

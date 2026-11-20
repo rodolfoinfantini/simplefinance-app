@@ -19,6 +19,7 @@ export interface InstallmentPlanItem {
   paidAmount: number
   remainingAmount: number
   totalAmount: number
+  purchaseDate: string
   nextInstallmentDate: string
   lastInstallmentDate: string
 }

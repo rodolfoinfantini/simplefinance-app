@@ -165,6 +165,7 @@ public class InstallmentsEndpointsTests
         Assert.Equal(7, item.GetProperty("remainingInstallments").GetInt32());
         Assert.Equal(156.37m, item.GetProperty("installmentAmount").GetDecimal());
         Assert.Equal(1094.59m, item.GetProperty("remainingAmount").GetDecimal());
+        Assert.Equal(new DateTime(2026, 7, 30, 20, 0, 0, DateTimeKind.Utc), item.GetProperty("purchaseDate").GetDateTime());
         Assert.Equal(new DateTime(2027, 5, 10, 3, 0, 0, DateTimeKind.Utc), item.GetProperty("lastInstallmentDate").GetDateTime());
     }
 

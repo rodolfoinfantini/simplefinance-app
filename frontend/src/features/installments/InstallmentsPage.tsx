@@ -64,7 +64,7 @@ function StatTileSkeleton() {
 function RowSkeleton() {
   return (
     <tr>
-      {Array.from({ length: 7 }).map((_, index) => (
+      {Array.from({ length: 8 }).map((_, index) => (
         <td key={index}>
           <Placeholder as="span" animation="glow">
             <Placeholder xs={8} />
@@ -90,6 +90,7 @@ function InstallmentRow({ item }: { item: InstallmentPlanItem }) {
           <MoneyText amount={item.totalAmount} variant="neutral" showSign={false} />
         </div>
       </td>
+      <td className="text-muted">{formatFullDate(item.purchaseDate)}</td>
       <td>
         <span className="text-muted">{item.institutionName ?? item.accountName}</span>
       </td>
@@ -233,6 +234,7 @@ export function InstallmentsPage() {
               <thead>
                 <tr>
                   <th>{t('table.description')}</th>
+                  <th>{t('table.purchaseDate')}</th>
                   <th>{t('table.card')}</th>
                   <th>{t('table.category')}</th>
                   <th>{t('table.installment')}</th>

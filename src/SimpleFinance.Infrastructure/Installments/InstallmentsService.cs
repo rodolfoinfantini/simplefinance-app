@@ -22,6 +22,7 @@ public sealed record InstallmentPlanItem(
     decimal PaidAmount,
     decimal RemainingAmount,
     decimal TotalAmount,
+    DateTime PurchaseDate,
     DateTime NextInstallmentDate,
     DateTime LastInstallmentDate);
 
@@ -180,6 +181,11 @@ public sealed partial class InstallmentsService(SimpleFinanceDbContext db)
                 ? paidDbRows.Sum(r => r.Amount)
                 : paidDbRows.Sum(r => r.Amount) + Math.Max(0, paidCount - paidDbRows.Count) * installmentAmount;
 
+            var firstRow = orderedInstallments[0];
+            var purchaseDate = firstRow.InstallmentNumber == 1
+                ? firstRow.Date
+                : firstRow.Date.AddMonths(-(firstRow.InstallmentNumber - 1));
+
             var displayRow = orderedInstallments
                 .OrderByDescending(r => CleanDisplayDescription(r.Description).Length)
                 .First();
@@ -202,6 +208,7 @@ public sealed partial class InstallmentsService(SimpleFinanceDbContext db)
                 PaidAmount: paidAmount,
                 RemainingAmount: remainingAmount,
                 TotalAmount: paidAmount + remainingAmount,
+                PurchaseDate: purchaseDate,
                 NextInstallmentDate: nextInstallmentDate,
                 LastInstallmentDate: lastInstallmentDate));
         }

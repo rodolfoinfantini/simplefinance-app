@@ -12,6 +12,7 @@
   },
   "table": {
     "description": "Description",
+    "purchaseDate": "Purchase date",
     "card": "Card",
     "category": "Category",
     "installment": "Installment (x/y)",
