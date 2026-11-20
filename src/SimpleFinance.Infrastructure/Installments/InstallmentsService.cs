@@ -216,6 +216,7 @@ public sealed partial class InstallmentsService(SimpleFinanceDbContext db)
         var sortedItems = activeItems
             .OrderBy(i => i.LastInstallmentDate)
             .ThenByDescending(i => i.RemainingAmount)
+            .ThenBy(i => i.InstallmentAmount)
             .ToList();
 
         var totalRemaining = sortedItems.Sum(i => i.RemainingAmount);
