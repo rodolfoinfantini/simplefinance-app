@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace SimpleFinance.Infrastructure.Pluggy.Dtos;
@@ -21,7 +22,11 @@ public sealed record PluggyAccountDto(
     [property: JsonPropertyName("owner")] string? Owner,
     [property: JsonPropertyName("currencyCode")] string CurrencyCode,
     [property: JsonPropertyName("bankData")] PluggyBankDataDto? BankData,
-    [property: JsonPropertyName("creditData")] PluggyCreditDataDto? CreditData);
+    [property: JsonPropertyName("creditData")] PluggyCreditDataDto? CreditData)
+{
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
 
 public sealed record PluggyBankDataDto(
     [property: JsonPropertyName("transferNumber")] string? TransferNumber,
@@ -30,7 +35,11 @@ public sealed record PluggyBankDataDto(
     [property: JsonPropertyName("overdraftContractedLimit")] decimal? OverdraftContractedLimit,
     [property: JsonPropertyName("overdraftUsedLimit")] decimal? OverdraftUsedLimit,
     [property: JsonPropertyName("unarrangedOverdraftAmount")] decimal? UnarrangedOverdraftAmount,
-    [property: JsonPropertyName("blockedBalance")] decimal? BlockedBalance = null);
+    [property: JsonPropertyName("blockedBalance")] decimal? BlockedBalance = null)
+{
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
 
 public sealed record PluggyCreditDataDto(
     [property: JsonPropertyName("level")] string? Level,

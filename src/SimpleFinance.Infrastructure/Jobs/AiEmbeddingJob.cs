@@ -1,6 +1,8 @@
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using SimpleFinance.Application.Ai;
 using SimpleFinance.Application.Ai.Usage;
 using SimpleFinance.Domain.Entities;
@@ -58,6 +60,7 @@ public sealed class AiEmbeddingJob
         _keyProvider = keyProvider;
     }
 
+    [DisableConcurrentExecution(timeoutInSeconds: 300)]
     public async Task ExecuteAsync(CancellationToken ct)
     {
         // Only users who opted into cloud AI categorization are ever processed. In the single-user
@@ -167,12 +170,22 @@ public sealed class AiEmbeddingJob
             }
         }
 
+        // Re-check right before inserting (including soft-deleted rows) so a concurrent post-sync
+        // enqueue or previously soft-deleted embedding row cannot trigger a 23505 unique violation.
+        var candidateIds = transactions.Select(t => t.Id).ToList();
+        var alreadyExistingIds = await _db.TransactionEmbeddings
+            .IgnoreQueryFilters()
+            .Where(te => candidateIds.Contains(te.TransactionId))
+            .Select(te => te.TransactionId)
+            .ToHashSetAsync(ct);
+
         // Create one embedding row per transaction whose hash resolved to a vector (cache-hit or freshly
         // embedded). Transactions whose hash was skipped by the budget break are left for the next run.
         var now = DateTime.UtcNow;
+        var added = 0;
         foreach (var t in transactions)
         {
-            if (!hashToVector.TryGetValue(txnHash[t.Id], out var vector))
+            if (alreadyExistingIds.Contains(t.Id) || !hashToVector.TryGetValue(txnHash[t.Id], out var vector))
             {
                 continue;
             }
@@ -187,9 +200,23 @@ public sealed class AiEmbeddingJob
                 CreatedAt = now,
                 UpdatedAt = now,
             });
+            added++;
         }
 
-        await _db.SaveChangesAsync(ct);
+        if (added > 0)
+        {
+            try
+            {
+                await _db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+            {
+                _logger.LogInformation(
+                    "AiEmbeddingJob skipped duplicate embeddings already persisted by a concurrent run for user {UserId}.",
+                    userId);
+                _db.ChangeTracker.Clear();
+            }
+        }
 
         if (budgetHit)
         {

@@ -170,7 +170,17 @@ public class PluggyDataProviderTests
                   "balance": 738.07,
                   "itemId": "item-mp",
                   "currencyCode": "BRL",
-                  "bankData": { "closingBalance": 10831.48, "automaticallyInvestedBalance": null }
+                  "bankData": { "closingBalance": 10831.48, "automaticallyInvestedBalance": 738.07 }
+                },
+                {
+                  "id": "acc-same-as-balance",
+                  "type": "BANK",
+                  "subtype": "CHECKING_ACCOUNT",
+                  "name": "Sicoob Auto Equals Balance",
+                  "balance": 4.24,
+                  "itemId": "item-mp",
+                  "currencyCode": "BRL",
+                  "bankData": { "closingBalance": 4.24, "automaticallyInvestedBalance": 4.24 }
                 }
               ]
             }
@@ -182,5 +192,6 @@ public class PluggyDataProviderTests
         Assert.Equal(10093.41m, accounts.Single(a => a.Id == "acc-auto").AutomaticallyInvestedBalance);
         Assert.Equal(10093.41m, accounts.Single(a => a.Id == "acc-blocked").AutomaticallyInvestedBalance);
         Assert.Equal(10093.41m, accounts.Single(a => a.Id == "acc-closing").AutomaticallyInvestedBalance);
+        Assert.Null(accounts.Single(a => a.Id == "acc-same-as-balance").AutomaticallyInvestedBalance);
     }
 }
