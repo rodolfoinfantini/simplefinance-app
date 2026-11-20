@@ -2,6 +2,8 @@
   "filters": {
     "from": "De",
     "to": "Até",
+    "thisMonth": "Este mês",
+    "lastMonth": "Mês passado",
     "account": "Conta",
     "allAccounts": "Todas as contas",
     "category": "Categoria",

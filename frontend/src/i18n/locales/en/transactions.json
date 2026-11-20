@@ -2,6 +2,8 @@
   "filters": {
     "from": "From",
     "to": "To",
+    "thisMonth": "This month",
+    "lastMonth": "Last month",
     "account": "Account",
     "allAccounts": "All accounts",
     "category": "Category",

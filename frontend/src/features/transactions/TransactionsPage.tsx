@@ -12,6 +12,7 @@ import {
   Alert,
   Badge,
   Button,
+  ButtonGroup,
   Card,
   CardBody,
   Col,
@@ -53,6 +54,21 @@ import {
 
 const SEARCH_DEBOUNCE_MS = 300
 const SKELETON_ROW_COUNT = 8
+
+function toIsoDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getMonthDateRange(monthOffset: number): { dateFrom: string; dateTo: string } {
+  const now = new Date()
+  return {
+    dateFrom: toIsoDate(new Date(now.getFullYear(), now.getMonth() + monthOffset, 1)),
+    dateTo: toIsoDate(new Date(now.getFullYear(), now.getMonth() + monthOffset + 1, 0)),
+  }
+}
 
 function formatRowDate(dateString: string): string {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(
@@ -384,6 +400,11 @@ export function TransactionsPage() {
     }
   }
 
+  const thisMonth = getMonthDateRange(0)
+  const lastMonth = getMonthDateRange(-1)
+  const isThisMonthSelected = filters.dateFrom === thisMonth.dateFrom && filters.dateTo === thisMonth.dateTo
+  const isLastMonthSelected = filters.dateFrom === lastMonth.dateFrom && filters.dateTo === lastMonth.dateTo
+
   const accounts = (accountsQuery.data ?? []).map((account) => ({
     id: account.id,
     label: formatAccountOptionLabel(account),
@@ -545,6 +566,20 @@ export function TransactionsPage() {
                   style={{ paddingLeft: 36 }}
                 />
               </div>
+              <ButtonGroup size="sm">
+                <Button
+                  variant={isThisMonthSelected ? 'primary' : 'outline-secondary'}
+                  onClick={() => updateFilters({ ...filters, ...thisMonth })}
+                >
+                  {t('filters.thisMonth')}
+                </Button>
+                <Button
+                  variant={isLastMonthSelected ? 'primary' : 'outline-secondary'}
+                  onClick={() => updateFilters({ ...filters, ...lastMonth })}
+                >
+                  {t('filters.lastMonth')}
+                </Button>
+              </ButtonGroup>
               <Form.Check
                 type="switch"
                 id="txn-hide-transfers-switch"
