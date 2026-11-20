@@ -223,6 +223,7 @@ public sealed class SyncConnectionUseCase : ISyncReconciler
                 NumberMasked = pa.NumberMasked,
                 Owner = pa.Owner,
                 Balance = pa.Balance,
+                AutomaticallyInvestedBalance = pa.AutomaticallyInvestedBalance,
                 CurrencyCode = pa.CurrencyCode,
                 CreatedAt = now,
                 UpdatedAt = now,
@@ -242,6 +243,7 @@ public sealed class SyncConnectionUseCase : ISyncReconciler
         changed |= SetIfChanged(() => existing.NumberMasked, v => existing.NumberMasked = v, pa.NumberMasked);
         changed |= SetIfChanged(() => existing.Owner, v => existing.Owner = v, pa.Owner);
         changed |= SetIfChanged(() => existing.Balance, v => existing.Balance = v, pa.Balance);
+        changed |= SetIfChanged(() => existing.AutomaticallyInvestedBalance, v => existing.AutomaticallyInvestedBalance = v, pa.AutomaticallyInvestedBalance);
         changed |= SetIfChanged(() => existing.CurrencyCode, v => existing.CurrencyCode = v, pa.CurrencyCode);
 
         if (changed)

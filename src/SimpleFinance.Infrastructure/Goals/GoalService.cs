@@ -263,7 +263,7 @@ public sealed class GoalService(SimpleFinanceDbContext db)
     {
         if (goal.LinkedAccountId is not null)
         {
-            return account?.Balance ?? 0m;
+            return account is null ? 0m : account.Balance + (account.AutomaticallyInvestedBalance ?? 0m);
         }
 
         if (goal.LinkedInvestmentId is not null)

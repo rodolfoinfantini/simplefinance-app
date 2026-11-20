@@ -5,6 +5,9 @@
     "bankAccounts": "Bank Accounts",
     "creditCards": "Credit Cards"
   },
+  "bankAccount": {
+    "reserved": "Reserved:"
+  },
   "hideToggle": {
     "label": "Hide from totals",
     "ariaLabel": "Hide from totals",

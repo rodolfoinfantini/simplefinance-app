@@ -98,7 +98,33 @@ public sealed class PluggyDataProvider : IFinancialDataProvider
             Owner: dto.Owner,
             Balance: dto.Balance,
             CurrencyCode: dto.CurrencyCode,
-            CreditData: creditData);
+            CreditData: creditData,
+            AutomaticallyInvestedBalance: ResolveReservedBalance(dto));
+    }
+
+    private static decimal? ResolveReservedBalance(PluggyAccountDto dto)
+    {
+        if (!string.Equals(dto.Type, "BANK", StringComparison.OrdinalIgnoreCase) || dto.BankData is null)
+        {
+            return null;
+        }
+
+        if (dto.BankData.AutomaticallyInvestedBalance is > 0m)
+        {
+            return dto.BankData.AutomaticallyInvestedBalance;
+        }
+
+        if (dto.BankData.BlockedBalance is > 0m)
+        {
+            return dto.BankData.BlockedBalance;
+        }
+
+        if (dto.BankData.ClosingBalance is decimal closing && closing > dto.Balance)
+        {
+            return closing - dto.Balance;
+        }
+
+        return dto.BankData.AutomaticallyInvestedBalance;
     }
 
     private static ProviderTransaction MapTransaction(PluggyTransactionDto dto)

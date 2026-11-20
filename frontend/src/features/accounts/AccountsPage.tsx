@@ -79,6 +79,12 @@ function AccountTile({ account, accessToken }: { account: AccountResponse; acces
             </div>
           </div>
           <MoneyText amount={account.balance} variant="neutral" showSign={false} className="fs-3 fw-semibold" />
+          {account.automaticallyInvestedBalance != null && account.automaticallyInvestedBalance > 0 && (
+            <p className="text-muted small mt-1 mb-0">
+              {t('bankAccount.reserved')}{' '}
+              <MoneyText amount={account.automaticallyInvestedBalance} variant="neutral" showSign={false} className="text-body fw-medium" />
+            </p>
+          )}
         </CardBody>
       </Card>
     </Col>

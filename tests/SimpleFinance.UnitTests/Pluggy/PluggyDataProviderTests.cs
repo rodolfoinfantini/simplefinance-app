@@ -133,4 +133,54 @@ public class PluggyDataProviderTests
         Assert.Equal("Tesouro Nacional", investment.IssuerName);
         Assert.Equal(5230.45m, investment.Balance);
     }
+
+    [Fact]
+    public async Task GetAccountsAsync_BankAccountWithAutomaticallyInvestedOrBlockedOrClosingBalance_MapsReservedBalance()
+    {
+        var sut = CreateSut(new Dictionary<string, string>
+        {
+            ["/accounts?itemId=item-mp"] = """
+            {
+              "results": [
+                {
+                  "id": "acc-auto",
+                  "type": "BANK",
+                  "subtype": "CHECKING_ACCOUNT",
+                  "name": "Mercado Pago Auto",
+                  "balance": 738.07,
+                  "itemId": "item-mp",
+                  "currencyCode": "BRL",
+                  "bankData": { "closingBalance": 738.07, "automaticallyInvestedBalance": 10093.41 }
+                },
+                {
+                  "id": "acc-blocked",
+                  "type": "BANK",
+                  "subtype": "CHECKING_ACCOUNT",
+                  "name": "Mercado Pago Blocked",
+                  "balance": 738.07,
+                  "itemId": "item-mp",
+                  "currencyCode": "BRL",
+                  "bankData": { "closingBalance": 10831.48, "automaticallyInvestedBalance": 0, "blockedBalance": 10093.41 }
+                },
+                {
+                  "id": "acc-closing",
+                  "type": "BANK",
+                  "subtype": "CHECKING_ACCOUNT",
+                  "name": "Mercado Pago Closing",
+                  "balance": 738.07,
+                  "itemId": "item-mp",
+                  "currencyCode": "BRL",
+                  "bankData": { "closingBalance": 10831.48, "automaticallyInvestedBalance": null }
+                }
+              ]
+            }
+            """,
+        });
+
+        var accounts = await sut.GetAccountsAsync("item-mp", CancellationToken.None);
+
+        Assert.Equal(10093.41m, accounts.Single(a => a.Id == "acc-auto").AutomaticallyInvestedBalance);
+        Assert.Equal(10093.41m, accounts.Single(a => a.Id == "acc-blocked").AutomaticallyInvestedBalance);
+        Assert.Equal(10093.41m, accounts.Single(a => a.Id == "acc-closing").AutomaticallyInvestedBalance);
+    }
 }

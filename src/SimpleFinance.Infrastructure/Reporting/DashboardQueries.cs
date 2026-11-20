@@ -51,14 +51,14 @@ public sealed class DashboardQueries(IDbConnectionFactory connectionFactory) : I
     {
         const string sql = """
             SELECT
-                COALESCE((SELECT SUM(a."Balance") FROM "Accounts" a
+                COALESCE((SELECT SUM(a."Balance" + COALESCE(a."AutomaticallyInvestedBalance", 0)) FROM "Accounts" a
                           WHERE a."UserId" = @UserId AND a."Type" = @BankType
                             AND a."IsHidden" = false AND a."DeletedAt" IS NULL), 0)
                 + COALESCE((SELECT SUM(COALESCE(i."Balance", CASE WHEN i."Value" IS NOT NULL AND i."Quantity" IS NOT NULL THEN i."Value" * i."Quantity" ELSE i."Value" END, 0)) FROM "Investments" i
                             WHERE i."UserId" = @UserId AND i."DeletedAt" IS NULL), 0)
                     AS "NetWorth",
 
-                COALESCE((SELECT SUM(ba."Balance") FROM "Accounts" ba
+                COALESCE((SELECT SUM(ba."Balance" + COALESCE(ba."AutomaticallyInvestedBalance", 0)) FROM "Accounts" ba
                           WHERE ba."UserId" = @UserId AND ba."Type" = @BankType
                             AND ba."IsHidden" = false AND ba."DeletedAt" IS NULL), 0)
                     AS "TotalBalance",
@@ -217,7 +217,7 @@ public sealed class DashboardQueries(IDbConnectionFactory connectionFactory) : I
     {
         const string sql = """
             SELECT
-                COALESCE((SELECT SUM(a."Balance") FROM "Accounts" a
+                COALESCE((SELECT SUM(a."Balance" + COALESCE(a."AutomaticallyInvestedBalance", 0)) FROM "Accounts" a
                           WHERE a."UserId" = @UserId AND a."Type" = @BankType
                             AND a."IsHidden" = false AND a."DeletedAt" IS NULL), 0)
                     AS "AccountsBalance",
@@ -232,7 +232,7 @@ public sealed class DashboardQueries(IDbConnectionFactory connectionFactory) : I
                             AND ca."IsHidden" = false AND ca."DeletedAt" IS NULL), 0)
                     AS "CreditCardDebt",
 
-                COALESCE((SELECT SUM(a2."Balance") FROM "Accounts" a2
+                COALESCE((SELECT SUM(a2."Balance" + COALESCE(a2."AutomaticallyInvestedBalance", 0)) FROM "Accounts" a2
                           WHERE a2."UserId" = @UserId AND a2."Type" = @BankType
                             AND a2."IsHidden" = false AND a2."DeletedAt" IS NULL), 0)
                 + COALESCE((SELECT SUM(COALESCE(i2."Balance", CASE WHEN i2."Value" IS NOT NULL AND i2."Quantity" IS NOT NULL THEN i2."Value" * i2."Quantity" ELSE i2."Value" END, 0)) FROM "Investments" i2

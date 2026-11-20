@@ -27,6 +27,12 @@ public class Account : UserOwnedEntity
 
     public decimal Balance { get; set; }
 
+    /// <summary>
+    /// Funds held in automatic investment / reserve vaults linked to the bank account
+    /// (e.g. Pluggy <c>bankData.automaticallyInvestedBalance</c> for Mercado Pago Cofrinhos).
+    /// </summary>
+    public decimal? AutomaticallyInvestedBalance { get; set; }
+
     public string CurrencyCode { get; set; } = string.Empty;
 
     /// <summary>ACCT-03 groundwork for Phase 3 — hide an account from consolidated views.</summary>

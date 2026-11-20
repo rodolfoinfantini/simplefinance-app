@@ -29,7 +29,8 @@ public sealed record PluggyBankDataDto(
     [property: JsonPropertyName("automaticallyInvestedBalance")] decimal? AutomaticallyInvestedBalance,
     [property: JsonPropertyName("overdraftContractedLimit")] decimal? OverdraftContractedLimit,
     [property: JsonPropertyName("overdraftUsedLimit")] decimal? OverdraftUsedLimit,
-    [property: JsonPropertyName("unarrangedOverdraftAmount")] decimal? UnarrangedOverdraftAmount);
+    [property: JsonPropertyName("unarrangedOverdraftAmount")] decimal? UnarrangedOverdraftAmount,
+    [property: JsonPropertyName("blockedBalance")] decimal? BlockedBalance = null);
 
 public sealed record PluggyCreditDataDto(
     [property: JsonPropertyName("level")] string? Level,

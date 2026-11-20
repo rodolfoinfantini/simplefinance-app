@@ -104,6 +104,7 @@ public static class AccountsEndpoints
         a.MarketingName,
         a.NumberMasked,
         a.Balance,
+        a.AutomaticallyInvestedBalance,
         a.CurrencyCode,
         a.IsHidden,
         card is null
@@ -137,6 +138,7 @@ public static class AccountsEndpoints
         string? MarketingName,
         string? NumberMasked,
         decimal Balance,
+        decimal? AutomaticallyInvestedBalance,
         string CurrencyCode,
         bool IsHidden,
         CreditCardResponse? CreditCard);

@@ -5,6 +5,9 @@
     "bankAccounts": "Contas Bancárias",
     "creditCards": "Cartões de Crédito"
   },
+  "bankAccount": {
+    "reserved": "Reservado:"
+  },
   "hideToggle": {
     "label": "Ocultar dos totais",
     "ariaLabel": "Ocultar dos totais",

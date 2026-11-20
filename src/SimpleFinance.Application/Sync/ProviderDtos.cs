@@ -41,7 +41,8 @@ public sealed record ProviderAccount(
     string? Owner,
     decimal Balance,
     string CurrencyCode,
-    ProviderCreditData? CreditData);
+    ProviderCreditData? CreditData,
+    decimal? AutomaticallyInvestedBalance = null);
 
 public sealed record ProviderTransaction(
     string Id,

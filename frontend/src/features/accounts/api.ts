@@ -35,6 +35,7 @@ export interface AccountResponse {
   marketingName: string | null
   numberMasked: string | null
   balance: number
+  automaticallyInvestedBalance?: number | null
   currencyCode: string
   isHidden: boolean
   creditCard: CreditCardResponse | null
