@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace SimpleFinance.Infrastructure.Pluggy.Dtos;
@@ -22,11 +21,7 @@ public sealed record PluggyAccountDto(
     [property: JsonPropertyName("owner")] string? Owner,
     [property: JsonPropertyName("currencyCode")] string CurrencyCode,
     [property: JsonPropertyName("bankData")] PluggyBankDataDto? BankData,
-    [property: JsonPropertyName("creditData")] PluggyCreditDataDto? CreditData)
-{
-    [JsonExtensionData]
-    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
-}
+    [property: JsonPropertyName("creditData")] PluggyCreditDataDto? CreditData);
 
 public sealed record PluggyBankDataDto(
     [property: JsonPropertyName("transferNumber")] string? TransferNumber,
@@ -35,11 +30,18 @@ public sealed record PluggyBankDataDto(
     [property: JsonPropertyName("overdraftContractedLimit")] decimal? OverdraftContractedLimit,
     [property: JsonPropertyName("overdraftUsedLimit")] decimal? OverdraftUsedLimit,
     [property: JsonPropertyName("unarrangedOverdraftAmount")] decimal? UnarrangedOverdraftAmount,
-    [property: JsonPropertyName("blockedBalance")] decimal? BlockedBalance = null)
-{
-    [JsonExtensionData]
-    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
-}
+    [property: JsonPropertyName("blockedBalance")] decimal? BlockedBalance = null,
+    [property: JsonPropertyName("hasReservedBalance")] bool? HasReservedBalance = null,
+    [property: JsonPropertyName("reservedBalances")] IReadOnlyList<PluggyReservedBalanceDto>? ReservedBalances = null);
+
+public sealed record PluggyReservedBalanceDto(
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("identification")] string? Identification,
+    [property: JsonPropertyName("availableAmounts")] IReadOnlyList<PluggyReservedAmountDto>? AvailableAmounts);
+
+public sealed record PluggyReservedAmountDto(
+    [property: JsonPropertyName("amount")] decimal? Amount,
+    [property: JsonPropertyName("currencyCode")] string? CurrencyCode);
 
 public sealed record PluggyCreditDataDto(
     [property: JsonPropertyName("level")] string? Level,

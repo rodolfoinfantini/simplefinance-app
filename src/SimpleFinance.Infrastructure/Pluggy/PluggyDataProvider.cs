@@ -1,5 +1,3 @@
-using System.Text.Json;
-using Microsoft.Extensions.Logging;
 using SimpleFinance.Application.Sync;
 using SimpleFinance.Infrastructure.Pluggy.Dtos;
 
@@ -15,12 +13,10 @@ namespace SimpleFinance.Infrastructure.Pluggy;
 public sealed class PluggyDataProvider : IFinancialDataProvider
 {
     private readonly PluggyClient _client;
-    private readonly ILogger<PluggyDataProvider>? _logger;
 
-    public PluggyDataProvider(PluggyClient client, ILogger<PluggyDataProvider>? logger = null)
+    public PluggyDataProvider(PluggyClient client)
     {
         _client = client;
-        _logger = logger;
     }
 
     public Task<string> CreateConnectTokenAsync(string? existingPluggyItemId, CancellationToken ct) =>
@@ -72,7 +68,7 @@ public sealed class PluggyDataProvider : IFinancialDataProvider
     public Task SubmitMfaAsync(string pluggyItemId, string parameterName, string parameterValue, CancellationToken ct) =>
         _client.SubmitMfaAsync(pluggyItemId, parameterName, parameterValue, ct);
 
-    private ProviderAccount MapAccount(PluggyAccountDto dto)
+    private static ProviderAccount MapAccount(PluggyAccountDto dto)
     {
         var isCreditAccount = string.Equals(dto.Type, "CREDIT", StringComparison.OrdinalIgnoreCase);
         var creditData = dto.CreditData is null || !isCreditAccount
@@ -89,21 +85,6 @@ public sealed class PluggyDataProvider : IFinancialDataProvider
                 Status: dto.CreditData.Status,
                 HolderType: dto.CreditData.HolderType);
 
-        var reservedBalance = ResolveReservedBalance(dto);
-        if (!isCreditAccount && _logger is not null)
-        {
-            var extraNumbers = FormatExtraNumericFields(dto.ExtensionData, dto.BankData?.ExtensionData);
-            _logger.LogInformation(
-                "Pluggy BANK account {AccountName}: balance={Balance}, closing={Closing}, autoInvested={AutoInvested}, blocked={Blocked}, resolvedReserved={Resolved}, extraNumeric={Extra}",
-                dto.Name,
-                dto.Balance,
-                dto.BankData?.ClosingBalance,
-                dto.BankData?.AutomaticallyInvestedBalance,
-                dto.BankData?.BlockedBalance,
-                reservedBalance,
-                extraNumbers);
-        }
-
         return new ProviderAccount(
             Id: dto.Id,
             Type: dto.Type,
@@ -115,7 +96,7 @@ public sealed class PluggyDataProvider : IFinancialDataProvider
             Balance: dto.Balance,
             CurrencyCode: dto.CurrencyCode,
             CreditData: creditData,
-            AutomaticallyInvestedBalance: reservedBalance);
+            AutomaticallyInvestedBalance: ResolveReservedBalance(dto));
     }
 
     private static decimal? ResolveReservedBalance(PluggyAccountDto dto)
@@ -123,6 +104,20 @@ public sealed class PluggyDataProvider : IFinancialDataProvider
         if (!string.Equals(dto.Type, "BANK", StringComparison.OrdinalIgnoreCase) || dto.BankData is null)
         {
             return null;
+        }
+
+        // Pluggy Open Finance / MeuPluggy exposes per-vault savings pockets (e.g. Mercado Pago Cofrinhos)
+        // inside bankData.reservedBalances[].availableAmounts[].amount.
+        if (dto.BankData.ReservedBalances is { Count: > 0 } reserves)
+        {
+            var sum = reserves
+                .Where(r => r.AvailableAmounts is not null)
+                .SelectMany(r => r.AvailableAmounts!)
+                .Sum(a => a.Amount ?? 0m);
+            if (sum > 0m)
+            {
+                return sum;
+            }
         }
 
         // Explicit blocked/reserved balance separate from available balance.
@@ -146,36 +141,6 @@ public sealed class PluggyDataProvider : IFinancialDataProvider
         }
 
         return null;
-    }
-
-    private static string FormatExtraNumericFields(
-        Dictionary<string, JsonElement>? accountExtra,
-        Dictionary<string, JsonElement>? bankDataExtra)
-    {
-        var entries = new List<string>();
-        if (accountExtra is not null)
-        {
-            foreach (var (key, value) in accountExtra)
-            {
-                if (value.ValueKind == JsonValueKind.Number)
-                {
-                    entries.Add($"account.{key}={value.GetRawText()}");
-                }
-            }
-        }
-
-        if (bankDataExtra is not null)
-        {
-            foreach (var (key, value) in bankDataExtra)
-            {
-                if (value.ValueKind == JsonValueKind.Number)
-                {
-                    entries.Add($"bankData.{key}={value.GetRawText()}");
-                }
-            }
-        }
-
-        return entries.Count == 0 ? "none" : string.Join(", ", entries);
     }
 
     private static ProviderTransaction MapTransaction(PluggyTransactionDto dto)

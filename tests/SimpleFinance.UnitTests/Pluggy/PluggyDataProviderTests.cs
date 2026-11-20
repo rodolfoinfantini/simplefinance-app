@@ -181,6 +181,27 @@ public class PluggyDataProviderTests
                   "itemId": "item-mp",
                   "currencyCode": "BRL",
                   "bankData": { "closingBalance": 4.24, "automaticallyInvestedBalance": 4.24 }
+                },
+                {
+                  "id": "acc-cofrinhos",
+                  "type": "BANK",
+                  "subtype": "CHECKING_ACCOUNT",
+                  "name": "Mercado Pago Cofrinhos",
+                  "balance": 738.07,
+                  "itemId": "item-mp",
+                  "currencyCode": "BRL",
+                  "bankData": {
+                    "closingBalance": 738.07,
+                    "automaticallyInvestedBalance": 738.07,
+                    "hasReservedBalance": true,
+                    "reservedBalances": [
+                      { "name": "Emergência", "availableAmounts": [{ "amount": 2563.09, "currencyCode": "BRL" }] },
+                      { "name": "Contas", "availableAmounts": [{ "amount": 252.14, "currencyCode": "BRL" }] },
+                      { "name": "Financiamento e Seguro", "availableAmounts": [{ "amount": 2086.96, "currencyCode": "BRL" }] },
+                      { "name": "Fatura", "availableAmounts": [{ "amount": 5191.22, "currencyCode": "BRL" }] },
+                      { "name": "Formatura", "availableAmounts": [{ "amount": 0, "currencyCode": "BRL" }] }
+                    ]
+                  }
                 }
               ]
             }
@@ -193,5 +214,6 @@ public class PluggyDataProviderTests
         Assert.Equal(10093.41m, accounts.Single(a => a.Id == "acc-blocked").AutomaticallyInvestedBalance);
         Assert.Equal(10093.41m, accounts.Single(a => a.Id == "acc-closing").AutomaticallyInvestedBalance);
         Assert.Null(accounts.Single(a => a.Id == "acc-same-as-balance").AutomaticallyInvestedBalance);
+        Assert.Equal(10093.41m, accounts.Single(a => a.Id == "acc-cofrinhos").AutomaticallyInvestedBalance);
     }
 }
