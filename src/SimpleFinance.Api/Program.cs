@@ -123,6 +123,7 @@ try
     builder.Services.Configure<SimpleFinance.Infrastructure.Recurring.RecurringOptions>(
         builder.Configuration.GetSection(SimpleFinance.Infrastructure.Recurring.RecurringOptions.SectionName));
     builder.Services.AddScoped<SimpleFinance.Infrastructure.Recurring.RecurringService>();
+    builder.Services.AddScoped<SimpleFinance.Infrastructure.Installments.InstallmentsService>();
 
     // --- Goals (07-04, GOAL-01..03): GoalService is the real, directly-testable business logic
     // behind GET/POST/PATCH /api/goals/* -- GoalsEndpoints.cs is a thin wrapper over it.
@@ -592,6 +593,7 @@ try
     app.MapInvestmentsEndpoints();
     app.MapNetWorthEndpoints();
     app.MapRecurringEndpoints();
+    app.MapInstallmentsEndpoints();
     app.MapGoalsEndpoints();
     app.MapReportsEndpoints();
     app.MapExportEndpoints();

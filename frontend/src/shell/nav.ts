@@ -50,6 +50,7 @@ const MENU: readonly SectionSpec[] = [
       link('investments', '/investments', 'trending-up'),
       link('netWorth', '/net-worth', 'scale'),
       link('recurring', '/recurring', 'repeat'),
+      link('installments', '/installments', 'credit-card'),
       link('goals', '/goals', 'target'),
       link('reports', '/reports', 'file-text'),
       link('assistant', '/assistente', 'message-circle'),

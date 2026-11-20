@@ -19,6 +19,7 @@ export const routes: RouteObject[] = [
           { path: '/investments', Component: lazy(() => import('@/views/app/investments')) },
           { path: '/net-worth', Component: lazy(() => import('@/views/app/net-worth')) },
           { path: '/recurring', Component: lazy(() => import('@/views/app/recurring')) },
+          { path: '/installments', Component: lazy(() => import('@/views/app/installments')) },
           { path: '/goals', Component: lazy(() => import('@/views/app/goals')) },
           { path: '/reports', Component: lazy(() => import('@/views/app/reports')) },
           { path: '/assistente', Component: lazy(() => import('@/views/app/assistant')) },

@@ -1,0 +1,31 @@
+{
+  "pageTitle": "Compras Parceladas em Aberto",
+  "loadError": "Não foi possível carregar suas compras parceladas. Tente novamente.",
+  "filters": {
+    "card": "Cartão",
+    "allCards": "Todos os cartões"
+  },
+  "stat": {
+    "totalRemaining": "Total restante a pagar",
+    "monthlyCommitted": "Comprometido por mês",
+    "activePlans": "Parcelamentos ativos"
+  },
+  "table": {
+    "description": "Descrição",
+    "card": "Cartão",
+    "category": "Categoria",
+    "installment": "Parcela (x/y)",
+    "installmentAmount": "Valor da parcela",
+    "remainingAmount": "Falta pagar",
+    "lastInstallmentDate": "Última parcela"
+  },
+  "row": {
+    "uncategorized": "Sem categoria",
+    "totalPurchase": "Total da compra:",
+    "remainingCount": "faltam {{count}}"
+  },
+  "empty": {
+    "title": "Nenhuma parcela em aberto",
+    "description": "Quando houver compras parceladas ainda não quitadas nos seus cartões, elas aparecerão aqui."
+  }
+}

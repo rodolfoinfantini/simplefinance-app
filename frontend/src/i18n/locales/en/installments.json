@@ -1,0 +1,31 @@
+{
+  "pageTitle": "Active Installment Purchases",
+  "loadError": "Couldn't load your installment purchases. Please try again.",
+  "filters": {
+    "card": "Card",
+    "allCards": "All cards"
+  },
+  "stat": {
+    "totalRemaining": "Total remaining to pay",
+    "monthlyCommitted": "Committed per month",
+    "activePlans": "Active installment plans"
+  },
+  "table": {
+    "description": "Description",
+    "card": "Card",
+    "category": "Category",
+    "installment": "Installment (x/y)",
+    "installmentAmount": "Installment amount",
+    "remainingAmount": "Remaining to pay",
+    "lastInstallmentDate": "Last installment"
+  },
+  "row": {
+    "uncategorized": "Uncategorized",
+    "totalPurchase": "Total purchase:",
+    "remainingCount": "{{count}} left"
+  },
+  "empty": {
+    "title": "No unpaid installments",
+    "description": "When you have active installment purchases on your credit cards, they will appear here."
+  }
+}
