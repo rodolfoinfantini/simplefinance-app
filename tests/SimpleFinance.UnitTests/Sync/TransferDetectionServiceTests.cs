@@ -410,4 +410,31 @@ public class TransferDetectionServiceTests
         Assert.True((await db.Transactions.SingleAsync(t => t.Id == retiradoDebit.Id)).IsTransfer);
         Assert.False((await db.Transactions.SingleAsync(t => t.Id == unrelatedCredit.Id)).IsTransfer);
     }
+
+    [Fact]
+    public async Task DetectTransfersForUserAsync_ReservaPorGastoPairs_FlagsBothSamePrefixAndCrossLabeledWithDinheiroReservado()
+    {
+        await using var db = CreateDbContext();
+        var userId = Guid.NewGuid();
+        var mercadoPago = SeedAccount(db, userId);
+        var day = new DateTime(2026, 11, 18, 15, 0, 0, DateTimeKind.Utc);
+
+        // Pair 1: both legs labeled "Reserva por gasto"
+        var pair1Debit = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Debit, -12.50m, day, description: "Reserva por gasto");
+        var pair1Credit = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Credit, 12.50m, day, description: "Reserva por gasto Emergência");
+
+        // Pair 2: debit labeled "Reserva por gasto" paired with credit labeled "Dinheiro reservado"
+        var pair2Debit = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Debit, -7.25m, day, description: "Reserva por gasto");
+        var pair2Credit = SeedTransaction(db, userId, mercadoPago.Id, TransactionType.Credit, 7.25m, day, description: "Dinheiro reservado");
+
+        var sut = new TransferDetectionService(db);
+
+        var flaggedCount = await sut.DetectTransfersForUserAsync(userId, CancellationToken.None);
+
+        Assert.Equal(4, flaggedCount);
+        Assert.True((await db.Transactions.SingleAsync(t => t.Id == pair1Debit.Id)).IsTransfer);
+        Assert.True((await db.Transactions.SingleAsync(t => t.Id == pair1Credit.Id)).IsTransfer);
+        Assert.True((await db.Transactions.SingleAsync(t => t.Id == pair2Debit.Id)).IsTransfer);
+        Assert.True((await db.Transactions.SingleAsync(t => t.Id == pair2Credit.Id)).IsTransfer);
+    }
 }

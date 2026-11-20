@@ -167,24 +167,29 @@ public sealed class TransferDetectionService : ITransferDetectionService
 
     /// <summary>
     /// Known accent-folded, lowercased keywords for same-account savings/reserve vaults
-    /// (e.g. Mercado Pago Cofrinhos "Dinheiro retirado" / "Dinheiro reservado", Nubank Caixinhas,
-    /// PicPay/Inter/Itaú Cofrinhos). Ordered most-specific first so same-day pairs of different
-    /// operations (e.g. a R$ 500 "Dinheiro retirado" pair AND a R$ 500 "Dinheiro reservado" pair
-    /// on the exact same date and account) pair unambiguously within their own family.
+    /// (e.g. Mercado Pago Cofrinhos "Dinheiro retirado" / "Dinheiro reservado" / "Reserva por gasto",
+    /// Nubank Caixinhas, PicPay/Inter/Itaú Cofrinhos). Ordered most-specific first; related deposit
+    /// aliases (like "reserva por gasto" and "dinheiro reservado") share a canonical family so both
+    /// identical-prefix pairs and cross-labeled legs pair cleanly, while opposite operations (e.g.
+    /// "dinheiro retirado" vs "dinheiro reservado") stay in separate families.
     /// </summary>
-    private static readonly string[] SameAccountReserveFamilies =
+    private static readonly (string Keyword, string Family)[] SameAccountReserveFamilies =
     [
-        "dinheiro retirado",
-        "dinheiro reservado",
-        "dinheiro guardado",
-        "dinheiro resgatado",
-        "resgate caixinha",
-        "guardado na caixinha",
-        "resgate da caixinha",
-        "aplicacao rdb",
-        "resgate rdb",
-        "cofrinho",
-        "caixinha",
+        ("dinheiro retirado", "dinheiro retirado"),
+        ("dinheiro reservado", "dinheiro reservado"),
+        ("reserva por gasto", "dinheiro reservado"),
+        ("reserva por entrada", "dinheiro reservado"),
+        ("reserva programada", "dinheiro reservado"),
+        ("reserva automatica", "dinheiro reservado"),
+        ("dinheiro guardado", "dinheiro guardado"),
+        ("dinheiro resgatado", "dinheiro resgatado"),
+        ("resgate caixinha", "resgate caixinha"),
+        ("guardado na caixinha", "guardado na caixinha"),
+        ("resgate da caixinha", "resgate da caixinha"),
+        ("aplicacao rdb", "aplicacao rdb"),
+        ("resgate rdb", "resgate rdb"),
+        ("cofrinho", "cofrinho"),
+        ("caixinha", "caixinha"),
     ];
 
     /// <summary>
@@ -251,9 +256,9 @@ public sealed class TransferDetectionService : ITransferDetectionService
             return null;
         }
 
-        foreach (var family in SameAccountReserveFamilies)
+        foreach (var (keyword, family) in SameAccountReserveFamilies)
         {
-            if (normalizedDescription.Contains(family, StringComparison.Ordinal))
+            if (normalizedDescription.Contains(keyword, StringComparison.Ordinal))
             {
                 return family;
             }
