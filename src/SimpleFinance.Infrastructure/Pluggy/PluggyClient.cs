@@ -242,25 +242,48 @@ public sealed class PluggyClient
         return results;
     }
 
-    /// <summary>GET /investments?itemId= -- returns an empty list (never null/exception) on zero results.</summary>
+    /// <summary>GET /investments?itemId= -- follows Pluggy page-based pagination across all pages, returning an empty list on zero results.</summary>
     public async Task<IReadOnlyList<PluggyInvestmentDto>> GetInvestmentsAsync(string itemId, CancellationToken ct)
     {
-        var response = await SendAuthenticatedAsync(
-            () => new HttpRequestMessage(HttpMethod.Get, $"/investments?itemId={Uri.EscapeDataString(itemId)}"),
-            ct);
+        var results = new List<PluggyInvestmentDto>();
+        var escapedItemId = Uri.EscapeDataString(itemId);
+        var pageNumber = 1;
 
-        var page = await response.Content.ReadFromJsonAsync<PluggyListResponseDto<PluggyInvestmentDto>>(cancellationToken: ct);
-        return page?.Results ?? [];
+        while (true)
+        {
+            var requestUri = pageNumber == 1
+                ? $"/investments?itemId={escapedItemId}"
+                : $"/investments?itemId={escapedItemId}&page={pageNumber}";
+
+            var response = await SendAuthenticatedAsync(
+                () => new HttpRequestMessage(HttpMethod.Get, requestUri),
+                ct);
+
+            var page = await response.Content.ReadFromJsonAsync<PluggyListResponseDto<PluggyInvestmentDto>>(cancellationToken: ct);
+            if (page?.Results is { Count: > 0 })
+            {
+                results.AddRange(page.Results);
+            }
+
+            if (page?.TotalPages is null || pageNumber >= page.TotalPages.Value)
+            {
+                break;
+            }
+
+            pageNumber++;
+        }
+
+        return results;
     }
 
     /// <summary>
-    /// Shared envelope for /accounts and /investments list responses (results-wrapped, matching
-    /// the v2 transactions envelope's own "results" key) -- not independently re-verified by
-    /// 02-RESEARCH.md for these two endpoints specifically, but consistent with Pluggy's other
-    /// list-endpoint convention; flagged for live-sandbox confirmation.
+    /// Shared envelope for /accounts and /investments list responses (results-wrapped, with optional
+    /// page/totalPages metadata for page-based pagination on /investments).
     /// </summary>
     private sealed record PluggyListResponseDto<T>(
-        [property: System.Text.Json.Serialization.JsonPropertyName("results")] IReadOnlyList<T>? Results);
+        [property: System.Text.Json.Serialization.JsonPropertyName("results")] IReadOnlyList<T>? Results,
+        [property: System.Text.Json.Serialization.JsonPropertyName("page")] int? Page = null,
+        [property: System.Text.Json.Serialization.JsonPropertyName("totalPages")] int? TotalPages = null);
 
     /// <summary>
     /// Attaches the current API key to <paramref name="requestFactory"/>'s request and sends it.

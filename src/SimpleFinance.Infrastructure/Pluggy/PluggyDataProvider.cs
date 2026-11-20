@@ -142,7 +142,7 @@ public sealed class PluggyDataProvider : IFinancialDataProvider
         // guessing at an unconfirmed shape.
         Institution: null,
         IssuerName: dto.Issuer,
-        Balance: dto.Balance,
+        Balance: dto.Balance ?? dto.Amount,
         Value: dto.Value,
         Quantity: dto.Quantity,
         AmountInvested: dto.AmountOriginal,

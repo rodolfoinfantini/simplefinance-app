@@ -128,6 +128,25 @@ public class PluggyClientDataTests
     }
 
     [Fact]
+    public async Task GetInvestmentsAsync_MultiplePages_FollowsPageQueryUntilTotalPages()
+    {
+        var fixtures = new Dictionary<string, string>
+        {
+            ["/investments?itemId=item-paged"] = """{"page": 1, "totalPages": 2, "results": [{"id": "inv-1", "name": "PETR4", "balance": 86.34, "type": "EQUITY", "value": 43.17, "quantity": 2, "itemId": "item-paged"}]}""",
+            ["/investments?itemId=item-paged&page=2"] = """{"page": 2, "totalPages": 2, "results": [{"id": "inv-2", "name": "BBAS3", "balance": 225.92, "type": "EQUITY", "value": 14.12, "quantity": 16, "itemId": "item-paged"}]}""",
+        };
+        var sut = CreateSut(fixtures, out var handler);
+
+        var investments = await sut.GetInvestmentsAsync("item-paged", CancellationToken.None);
+
+        Assert.Equal(2, investments.Count);
+        Assert.Contains(investments, i => i.Name == "PETR4" && i.Balance == 86.34m);
+        Assert.Contains(investments, i => i.Name == "BBAS3" && i.Balance == 225.92m);
+        Assert.Contains(handler.RequestedPaths, p => p == "/investments?itemId=item-paged");
+        Assert.Contains(handler.RequestedPaths, p => p == "/investments?itemId=item-paged&page=2");
+    }
+
+    [Fact]
     public async Task GetTransactionsAsync_FollowsCursorAcrossTwoPages_AndStopsOnNullNext()
     {
         var fixtures = new Dictionary<string, string>

@@ -342,4 +342,31 @@ public class GoalServiceTests
         Assert.Equal("new-icon", result.Icon);
         Assert.Equal("#123456", result.Color);
     }
+
+    [Fact]
+    public async Task GetGoalsAsync_LinkedToEquityInvestment_PrefersBalanceOverUnitValueAndFallsBackToValueTimesQuantity()
+    {
+        var userId = Guid.NewGuid();
+        await using var db = CreateDb();
+
+        var withBalance = NewInvestment(userId, value: 14.12m);
+        withBalance.Balance = 225.92m;
+        withBalance.Quantity = 16m;
+
+        var withoutBalance = NewInvestment(userId, value: 40.19m);
+        withoutBalance.Balance = null;
+        withoutBalance.Quantity = 5m;
+
+        db.Investments.AddRange(withBalance, withoutBalance);
+        db.Goals.AddRange(
+            NewGoal(userId, "Goal Balance", 1000m, currentAmount: 0m, linkedInvestmentId: withBalance.Id),
+            NewGoal(userId, "Goal Qty", 1000m, currentAmount: 0m, linkedInvestmentId: withoutBalance.Id));
+        await db.SaveChangesAsync();
+
+        var service = new GoalService(db);
+        var goals = await service.GetGoalsAsync(userId, CancellationToken.None);
+
+        Assert.Equal(225.92m, goals.Single(g => g.Name == "Goal Balance").CurrentAmount);
+        Assert.Equal(200.95m, goals.Single(g => g.Name == "Goal Qty").CurrentAmount);
+    }
 }

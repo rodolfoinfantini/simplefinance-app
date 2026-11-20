@@ -53,7 +53,7 @@ public sealed class DashboardQueries(IDbConnectionFactory connectionFactory) : I
             SELECT
                 COALESCE((SELECT SUM(a."Balance") FROM "Accounts" a
                           WHERE a."UserId" = @UserId AND a."IsHidden" = false AND a."DeletedAt" IS NULL), 0)
-                + COALESCE((SELECT SUM(i."Value") FROM "Investments" i
+                + COALESCE((SELECT SUM(COALESCE(i."Balance", CASE WHEN i."Value" IS NOT NULL AND i."Quantity" IS NOT NULL THEN i."Value" * i."Quantity" ELSE i."Value" END, 0)) FROM "Investments" i
                             WHERE i."UserId" = @UserId AND i."DeletedAt" IS NULL), 0)
                 - COALESCE((SELECT SUM(COALESCE(ccd."LastStatementBalance", 0)) FROM "CreditCardDetails" ccd
                             INNER JOIN "Accounts" ca ON ca."Id" = ccd."AccountId"
@@ -225,7 +225,7 @@ public sealed class DashboardQueries(IDbConnectionFactory connectionFactory) : I
                           WHERE a."UserId" = @UserId AND a."IsHidden" = false AND a."DeletedAt" IS NULL), 0)
                     AS "AccountsBalance",
 
-                COALESCE((SELECT SUM(i."Value") FROM "Investments" i
+                COALESCE((SELECT SUM(COALESCE(i."Balance", CASE WHEN i."Value" IS NOT NULL AND i."Quantity" IS NOT NULL THEN i."Value" * i."Quantity" ELSE i."Value" END, 0)) FROM "Investments" i
                           WHERE i."UserId" = @UserId AND i."DeletedAt" IS NULL), 0)
                     AS "InvestmentsBalance",
 
@@ -237,7 +237,7 @@ public sealed class DashboardQueries(IDbConnectionFactory connectionFactory) : I
 
                 COALESCE((SELECT SUM(a2."Balance") FROM "Accounts" a2
                           WHERE a2."UserId" = @UserId AND a2."IsHidden" = false AND a2."DeletedAt" IS NULL), 0)
-                + COALESCE((SELECT SUM(i2."Value") FROM "Investments" i2
+                + COALESCE((SELECT SUM(COALESCE(i2."Balance", CASE WHEN i2."Value" IS NOT NULL AND i2."Quantity" IS NOT NULL THEN i2."Value" * i2."Quantity" ELSE i2."Value" END, 0)) FROM "Investments" i2
                             WHERE i2."UserId" = @UserId AND i2."DeletedAt" IS NULL), 0)
                 - COALESCE((SELECT SUM(COALESCE(ccd2."LastStatementBalance", 0)) FROM "CreditCardDetails" ccd2
                             INNER JOIN "Accounts" ca2 ON ca2."Id" = ccd2."AccountId"

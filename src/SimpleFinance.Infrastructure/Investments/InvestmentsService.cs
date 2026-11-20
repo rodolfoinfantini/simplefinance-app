@@ -83,7 +83,7 @@ public sealed class InvestmentsService(InvestmentQueries investmentQueries) : II
         var byTypeRows = await investmentQueries.GetDistributionByTypeAsync(userId, ct);
         var byIssuerRows = await investmentQueries.GetDistributionByIssuerAsync(userId, ct);
 
-        var totalGain = totals.TotalCurrentValue - totals.TotalInvested;
+        var totalGain = totals.TotalGain;
         var totalGainPercent = totals.TotalInvested != 0
             ? totalGain / totals.TotalInvested * 100
             : (decimal?)null;

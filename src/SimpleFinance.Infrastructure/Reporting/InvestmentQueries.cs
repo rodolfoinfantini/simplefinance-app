@@ -8,7 +8,7 @@ public sealed record InvestmentPositionRow(
     decimal? Value, decimal? AmountInvested, decimal? AnnualRate, decimal? LastMonthRate,
     DateTime? Date, DateTime? DueDate, string? CurrencyCode);
 
-public sealed record InvestmentTotals(decimal TotalInvested, decimal TotalCurrentValue);
+public sealed record InvestmentTotals(decimal TotalInvested, decimal TotalCurrentValue, decimal TotalGain);
 
 public sealed record InvestmentTypeDistributionRow(InvestmentType Type, decimal Value);
 
@@ -33,9 +33,15 @@ public sealed record InvestmentIssuerDistributionRow(string IssuerLabel, decimal
 /// </summary>
 public sealed class InvestmentQueries(IDbConnectionFactory connectionFactory)
 {
+    // Pluggy's `balance` is the position's current net total value, while `value` is the unit
+    // price of a single share/quota (and often null on fixed income). Prefer `Balance`, falling
+    // back to `Value * Quantity` when both exist, and finally `Value` for legacy/minimal rows.
+    private const string EffectiveValueSql =
+        """COALESCE(i."Balance", CASE WHEN i."Value" IS NOT NULL AND i."Quantity" IS NOT NULL THEN i."Value" * i."Quantity" ELSE i."Value" END)""";
+
     public async Task<IReadOnlyList<InvestmentPositionRow>> GetPositionsAsync(Guid userId, CancellationToken ct)
     {
-        const string sql = """
+        const string sql = $"""
             SELECT
                 i."Id" AS "Id",
                 i."Name" AS "Name",
@@ -43,7 +49,7 @@ public sealed class InvestmentQueries(IDbConnectionFactory connectionFactory)
                 i."Subtype" AS "Subtype",
                 i."Institution" AS "Institution",
                 i."IssuerName" AS "IssuerName",
-                i."Value" AS "Value",
+                {EffectiveValueSql} AS "Value",
                 i."AmountInvested" AS "AmountInvested",
                 i."AnnualRate" AS "AnnualRate",
                 i."LastMonthRate" AS "LastMonthRate",
@@ -52,7 +58,7 @@ public sealed class InvestmentQueries(IDbConnectionFactory connectionFactory)
                 i."CurrencyCode" AS "CurrencyCode"
             FROM "Investments" i
             WHERE i."UserId" = @UserId AND i."DeletedAt" IS NULL
-            ORDER BY COALESCE(i."Value", 0) DESC;
+            ORDER BY COALESCE({EffectiveValueSql}, 0) DESC;
             """;
 
         var parameters = new { UserId = userId };
@@ -67,10 +73,17 @@ public sealed class InvestmentQueries(IDbConnectionFactory connectionFactory)
 
     public async Task<InvestmentTotals> GetTotalsAsync(Guid userId, CancellationToken ct)
     {
-        const string sql = """
+        const string sql = $"""
             SELECT
                 COALESCE(SUM(COALESCE(i."AmountInvested", 0)), 0) AS "TotalInvested",
-                COALESCE(SUM(COALESCE(i."Value", 0)), 0) AS "TotalCurrentValue"
+                COALESCE(SUM(COALESCE({EffectiveValueSql}, 0)), 0) AS "TotalCurrentValue",
+                COALESCE(SUM(
+                    CASE
+                        WHEN i."AmountInvested" IS NOT NULL AND {EffectiveValueSql} IS NOT NULL
+                        THEN {EffectiveValueSql} - i."AmountInvested"
+                        ELSE 0
+                    END
+                ), 0) AS "TotalGain"
             FROM "Investments" i
             WHERE i."UserId" = @UserId AND i."DeletedAt" IS NULL;
             """;
@@ -87,10 +100,10 @@ public sealed class InvestmentQueries(IDbConnectionFactory connectionFactory)
     public async Task<IReadOnlyList<InvestmentTypeDistributionRow>> GetDistributionByTypeAsync(
         Guid userId, CancellationToken ct)
     {
-        const string sql = """
+        const string sql = $"""
             SELECT
                 i."Type" AS "Type",
-                SUM(COALESCE(i."Value", 0)) AS "Value"
+                SUM(COALESCE({EffectiveValueSql}, 0)) AS "Value"
             FROM "Investments" i
             WHERE i."UserId" = @UserId AND i."DeletedAt" IS NULL
             GROUP BY i."Type"
@@ -110,10 +123,10 @@ public sealed class InvestmentQueries(IDbConnectionFactory connectionFactory)
     public async Task<IReadOnlyList<InvestmentIssuerDistributionRow>> GetDistributionByIssuerAsync(
         Guid userId, CancellationToken ct)
     {
-        const string sql = """
+        const string sql = $"""
             SELECT
                 COALESCE(i."IssuerName", i."Institution", 'Unknown') AS "IssuerLabel",
-                SUM(COALESCE(i."Value", 0)) AS "Value"
+                SUM(COALESCE({EffectiveValueSql}, 0)) AS "Value"
             FROM "Investments" i
             WHERE i."UserId" = @UserId AND i."DeletedAt" IS NULL
             GROUP BY COALESCE(i."IssuerName", i."Institution", 'Unknown')

@@ -268,7 +268,11 @@ public sealed class GoalService(SimpleFinanceDbContext db)
 
         if (goal.LinkedInvestmentId is not null)
         {
-            return investment?.Value ?? 0m;
+            return investment?.Balance
+                ?? (investment?.Value is not null && investment.Quantity is not null
+                    ? investment.Value.Value * investment.Quantity.Value
+                    : investment?.Value)
+                ?? 0m;
         }
 
         return goal.CurrentAmount;

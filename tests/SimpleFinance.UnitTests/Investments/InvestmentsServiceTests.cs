@@ -209,4 +209,27 @@ public class InvestmentsServiceTests
         Assert.Equal(40m, fixedIncome.Percent);
         Assert.Equal(100m, equity.Percent + fixedIncome.Percent);
     }
+
+    [Fact]
+    public async Task GetSummaryAsync_EquitiesWithBalanceAndNullAmountInvested_SumsBalanceAndDoesNotReportFakeGain()
+    {
+        var userId = Guid.NewGuid();
+
+        await using var db = CreateDbContext();
+        var petr = NewInvestment(userId, type: InvestmentType.Equity, name: "PETR4", value: 43.17m, amountInvested: null);
+        petr.Balance = 86.34m;
+        petr.Quantity = 2m;
+        var bbas = NewInvestment(userId, type: InvestmentType.Equity, name: "BBAS3", value: 14.12m, amountInvested: null);
+        bbas.Balance = 225.92m;
+        bbas.Quantity = 16m;
+        db.Investments.AddRange(petr, bbas);
+        await db.SaveChangesAsync();
+
+        var summary = await CreateService().GetSummaryAsync(userId, CancellationToken.None);
+
+        Assert.Equal(312.26m, summary.TotalCurrentValue);
+        Assert.Equal(0m, summary.TotalInvested);
+        Assert.Equal(0m, summary.TotalGain);
+        Assert.Null(summary.TotalGainPercent);
+    }
 }
