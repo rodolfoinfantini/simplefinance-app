@@ -276,6 +276,17 @@ public sealed class PluggyClient
         return results;
     }
 
+    /// <summary>GET /bills?accountId= -- fetches credit card bills (most recent first), returning an empty list on zero results.</summary>
+    public async Task<IReadOnlyList<PluggyBillDto>> GetBillsAsync(string accountId, CancellationToken ct)
+    {
+        var response = await SendAuthenticatedAsync(
+            () => new HttpRequestMessage(HttpMethod.Get, $"/bills?accountId={Uri.EscapeDataString(accountId)}"),
+            ct);
+
+        var page = await response.Content.ReadFromJsonAsync<PluggyListResponseDto<PluggyBillDto>>(cancellationToken: ct);
+        return page?.Results ?? [];
+    }
+
     /// <summary>
     /// Shared envelope for /accounts and /investments list responses (results-wrapped, with optional
     /// page/totalPages metadata for page-based pagination on /investments).

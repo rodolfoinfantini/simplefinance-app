@@ -216,4 +216,57 @@ public class PluggyDataProviderTests
         Assert.Null(accounts.Single(a => a.Id == "acc-same-as-balance").AutomaticallyInvestedBalance);
         Assert.Equal(10093.41m, accounts.Single(a => a.Id == "acc-cofrinhos").AutomaticallyInvestedBalance);
     }
+
+    [Fact]
+    public async Task GetCreditCardBillsAsync_MapsClosingDueTotalMinimumAndSummedPayments()
+    {
+        var sut = CreateSut(new Dictionary<string, string>
+        {
+            ["/bills?accountId=acc-card-mp"] = """
+            {
+              "total": 2,
+              "totalPages": 1,
+              "page": 1,
+              "results": [
+                {
+                  "id": "bill-unpaid",
+                  "dueDate": "2026-11-20T00:00:00.000Z",
+                  "billClosingDate": "2026-11-15T00:00:00.000Z",
+                  "totalAmount": 5168.80,
+                  "totalAmountCurrencyCode": "BRL",
+                  "minimumPaymentAmount": 775.32,
+                  "payments": []
+                },
+                {
+                  "id": "bill-paid",
+                  "dueDate": "2026-10-20T00:00:00.000Z",
+                  "billClosingDate": "2026-10-15T00:00:00.000Z",
+                  "totalAmount": 5991.50,
+                  "totalAmountCurrencyCode": "BRL",
+                  "minimumPaymentAmount": 898.73,
+                  "payments": [
+                    { "id": "p1", "valueType": "PARTIAL_PAYMENT", "paymentDate": "2026-10-18T00:00:00.000Z", "amount": 2000.00 },
+                    { "id": "p2", "valueType": "FULL_PAYMENT", "paymentDate": "2026-10-19T00:00:00.000Z", "amount": 3991.50 }
+                  ]
+                }
+              ]
+            }
+            """,
+        });
+
+        var bills = await sut.GetCreditCardBillsAsync("acc-card-mp", CancellationToken.None);
+
+        Assert.Equal(2, bills.Count);
+
+        var unpaid = Assert.Single(bills, b => b.Id == "bill-unpaid");
+        Assert.Equal(new DateTime(2026, 11, 15, 0, 0, 0, DateTimeKind.Utc), unpaid.BillClosingDate);
+        Assert.Equal(new DateTime(2026, 11, 20, 0, 0, 0, DateTimeKind.Utc), unpaid.DueDate);
+        Assert.Equal(5168.80m, unpaid.TotalAmount);
+        Assert.Equal(775.32m, unpaid.MinimumPaymentAmount);
+        Assert.Equal(0m, unpaid.PaidAmount);
+
+        var paid = Assert.Single(bills, b => b.Id == "bill-paid");
+        Assert.Equal(5991.50m, paid.TotalAmount);
+        Assert.Equal(5991.50m, paid.PaidAmount);
+    }
 }

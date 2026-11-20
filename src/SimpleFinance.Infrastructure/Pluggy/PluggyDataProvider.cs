@@ -59,6 +59,18 @@ public sealed class PluggyDataProvider : IFinancialDataProvider
         return investments.Select(MapInvestment).ToList();
     }
 
+    public async Task<IReadOnlyList<ProviderCreditCardBill>> GetCreditCardBillsAsync(string pluggyAccountId, CancellationToken ct)
+    {
+        var bills = await _client.GetBillsAsync(pluggyAccountId, ct);
+        return bills.Select(b => new ProviderCreditCardBill(
+            Id: b.Id,
+            DueDate: b.DueDate,
+            BillClosingDate: b.BillClosingDate,
+            TotalAmount: b.TotalAmount,
+            MinimumPaymentAmount: b.MinimumPaymentAmount,
+            PaidAmount: b.Payments?.Sum(p => p.Amount) ?? 0m)).ToList();
+    }
+
     public Task TriggerItemUpdateAsync(string pluggyItemId, CancellationToken ct) =>
         _client.TriggerItemUpdateAsync(pluggyItemId, ct);
 

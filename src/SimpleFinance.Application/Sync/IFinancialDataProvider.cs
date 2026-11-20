@@ -29,6 +29,13 @@ public interface IFinancialDataProvider
 
     Task<IReadOnlyList<ProviderInvestment>> GetInvestmentsAsync(string pluggyItemId, CancellationToken ct);
 
+    /// <summary>
+    /// Fetches credit card bills (invoices) for a CREDIT account. Default empty implementation keeps
+    /// test fakes source-compatible when they do not exercise bill reconciliation.
+    /// </summary>
+    Task<IReadOnlyList<ProviderCreditCardBill>> GetCreditCardBillsAsync(string pluggyAccountId, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ProviderCreditCardBill>>([]);
+
     /// <summary>Maps to PATCH /items/{id} — triggers a new provider-side sync for the Item.</summary>
     Task TriggerItemUpdateAsync(string pluggyItemId, CancellationToken ct);
 

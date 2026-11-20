@@ -31,6 +31,14 @@ public sealed record ProviderCreditData(
     string? Status,
     string? HolderType);
 
+public sealed record ProviderCreditCardBill(
+    string Id,
+    DateTime? DueDate,
+    DateTime? BillClosingDate,
+    decimal TotalAmount,
+    decimal? MinimumPaymentAmount,
+    decimal PaidAmount);
+
 public sealed record ProviderAccount(
     string Id,
     string Type,

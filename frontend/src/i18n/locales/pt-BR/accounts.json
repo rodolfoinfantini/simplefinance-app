@@ -16,6 +16,7 @@
   },
   "creditCard": {
     "currentInvoice": "Fatura atual",
+    "nextInvoice": "Próxima fatura:",
     "usedOf": "usados de",
     "available": "Disponível",
     "limit": "Limite",

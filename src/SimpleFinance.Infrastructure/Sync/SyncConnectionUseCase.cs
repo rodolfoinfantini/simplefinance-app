@@ -1,5 +1,7 @@
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SimpleFinance.Application.Common;
 using SimpleFinance.Application.Sync;
 using SimpleFinance.Domain.Entities;
@@ -37,6 +39,7 @@ public sealed class SyncConnectionUseCase : ISyncReconciler
     private readonly ICategorizationService _categorizationService;
     private readonly ITransferDetectionService _transferDetectionService;
     private readonly IBackgroundJobClient _jobClient;
+    private readonly ILogger<SyncConnectionUseCase> _logger;
 
     public SyncConnectionUseCase(
         IFinancialDataProvider provider,
@@ -44,7 +47,8 @@ public sealed class SyncConnectionUseCase : ISyncReconciler
         IDistributedLockProvider lockProvider,
         ICategorizationService categorizationService,
         ITransferDetectionService transferDetectionService,
-        IBackgroundJobClient jobClient)
+        IBackgroundJobClient jobClient,
+        ILogger<SyncConnectionUseCase>? logger = null)
     {
         _provider = provider;
         _db = db;
@@ -52,6 +56,7 @@ public sealed class SyncConnectionUseCase : ISyncReconciler
         _categorizationService = categorizationService;
         _transferDetectionService = transferDetectionService;
         _jobClient = jobClient;
+        _logger = logger ?? NullLogger<SyncConnectionUseCase>.Instance;
     }
 
     public async Task<SyncResult> SyncConnectionAsync(Guid connectionId, SyncTrigger trigger, CancellationToken ct)
@@ -72,10 +77,15 @@ public sealed class SyncConnectionUseCase : ISyncReconciler
             ApplyItemStatus(connection, itemStatus);
 
             var providerAccounts = await _provider.GetAccountsAsync(connection.PluggyItemId, ct);
+            var creditAccounts = new List<(Guid AccountId, ProviderAccount ProviderAccount)>();
             foreach (var providerAccount in providerAccounts)
             {
                 var accountId = await UpsertAccountAsync(connection, providerAccount, counts, ct);
                 await ReconcileTransactionsAsync(connection, accountId, providerAccount.Id, counts, ct);
+                if (ParseAccountType(providerAccount.Type) == AccountType.Credit)
+                {
+                    creditAccounts.Add((accountId, providerAccount));
+                }
             }
 
             var providerInvestments = await _provider.GetInvestmentsAsync(connection.PluggyItemId, ct);
@@ -85,6 +95,20 @@ public sealed class SyncConnectionUseCase : ISyncReconciler
             }
 
             await _db.SaveChangesAsync(ct);
+
+            // Credit-card bill reconciliation runs after transactions are persisted so future-installment
+            // cards (e.g. Mercado Pago, where Account.Balance sums all future PENDING installments) can
+            // compute the active billing cycle's invoice cleanly when /bills has not yet published it.
+            var billDetailsChanged = false;
+            foreach (var (accountId, providerAccount) in creditAccounts)
+            {
+                billDetailsChanged |= await ReconcileCreditCardBillSummaryAsync(accountId, providerAccount, ct);
+            }
+
+            if (billDetailsChanged)
+            {
+                await _db.SaveChangesAsync(ct);
+            }
 
             // TXN-05 enrichment step: internal-transfer detection runs after every successful
             // sync's main upsert save, before the SyncLog write -- so a failure here is caught by
@@ -295,9 +319,18 @@ public sealed class SyncConnectionUseCase : ISyncReconciler
         changed |= SetIfChanged(() => existing.BrandAdditionalInfo, v => existing.BrandAdditionalInfo = v, cd.BrandAdditionalInfo);
         changed |= SetIfChanged(() => existing.CreditLimit, v => existing.CreditLimit = v, cd.CreditLimit);
         changed |= SetIfChanged(() => existing.AvailableCredit, v => existing.AvailableCredit = v, cd.AvailableCreditLimit);
-        changed |= SetIfChanged(() => existing.BalanceCloseDate, v => existing.BalanceCloseDate = v, cd.BalanceCloseDate);
-        changed |= SetIfChanged(() => existing.BalanceDueDate, v => existing.BalanceDueDate = v, cd.BalanceDueDate);
-        changed |= SetIfChanged(() => existing.MinimumPayment, v => existing.MinimumPayment = v, cd.MinimumPayment);
+        if (cd.BalanceCloseDate is not null)
+        {
+            changed |= SetIfChanged(() => existing.BalanceCloseDate, v => existing.BalanceCloseDate = v, NormalizeUtc(cd.BalanceCloseDate));
+        }
+        if (cd.BalanceDueDate is not null)
+        {
+            changed |= SetIfChanged(() => existing.BalanceDueDate, v => existing.BalanceDueDate = v, NormalizeUtc(cd.BalanceDueDate));
+        }
+        if (cd.MinimumPayment is not null)
+        {
+            changed |= SetIfChanged(() => existing.MinimumPayment, v => existing.MinimumPayment = v, cd.MinimumPayment);
+        }
         changed |= SetIfChanged(() => existing.Status, v => existing.Status = v, status);
         changed |= SetIfChanged(() => existing.HolderType, v => existing.HolderType = v, cd.HolderType);
 
@@ -306,6 +339,125 @@ public sealed class SyncConnectionUseCase : ISyncReconciler
             existing.UpdatedAt = DateTime.UtcNow;
         }
     }
+
+    private async Task<bool> ReconcileCreditCardBillSummaryAsync(
+        Guid accountId, ProviderAccount pa, CancellationToken ct)
+    {
+        var card = await _db.CreditCardDetails.FirstOrDefaultAsync(c => c.AccountId == accountId, ct);
+        if (card is null)
+        {
+            return false;
+        }
+
+        IReadOnlyList<ProviderCreditCardBill> bills;
+        try
+        {
+            bills = await _provider.GetCreditCardBillsAsync(pa.Id, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not fetch credit card bills for account {AccountId}; keeping existing bill summary.", accountId);
+            bills = [];
+        }
+
+        var orderedBills = bills
+            .OrderByDescending(b => b.DueDate ?? b.BillClosingDate ?? DateTime.MinValue)
+            .ToList();
+
+        var latestUnpaidBill = orderedBills.FirstOrDefault(b => b.TotalAmount - b.PaidAmount > 0.01m);
+
+        var targetCloseDate = card.BalanceCloseDate;
+        var targetDueDate = card.BalanceDueDate;
+        var targetMinPayment = card.MinimumPayment;
+        decimal? targetStatementBalance = card.LastStatementBalance;
+
+        if (latestUnpaidBill is not null)
+        {
+            targetCloseDate = latestUnpaidBill.BillClosingDate ?? targetCloseDate;
+            targetDueDate = latestUnpaidBill.DueDate ?? targetDueDate;
+            targetMinPayment = latestUnpaidBill.MinimumPaymentAmount ?? targetMinPayment;
+            targetStatementBalance = Math.Max(0m, latestUnpaidBill.TotalAmount - latestUnpaidBill.PaidAmount);
+        }
+        else if (orderedBills.Count > 0)
+        {
+            var latestPaid = orderedBills[0];
+            var todayBrt = DateTime.UtcNow.AddHours(-3).Date;
+
+            var projectedClose = latestPaid.BillClosingDate;
+            var projectedDue = latestPaid.DueDate ?? card.BalanceDueDate;
+
+            if (projectedDue is not null)
+            {
+                var guard = 0;
+                while (projectedDue.Value.Date < todayBrt && guard++ < 24)
+                {
+                    projectedDue = projectedDue.Value.AddMonths(1);
+                    if (projectedClose is not null)
+                    {
+                        projectedClose = projectedClose.Value.AddMonths(1);
+                    }
+                }
+            }
+
+            targetCloseDate = projectedClose ?? targetCloseDate;
+            targetDueDate = projectedDue ?? targetDueDate;
+
+            // When a card reports future-month PENDING installments in Account.Balance (e.g. Mercado Pago),
+            // isolate ONLY the active billing cycle up to the closing cutoff so "Current invoice" does not
+            // include future months' installments.
+            if (targetCloseDate is not null)
+            {
+                var pending = await _db.Transactions
+                    .Where(t => t.AccountId == accountId
+                        && t.Status == TransactionStatus.Pending
+                        && t.BillId == null)
+                    .Select(t => new { t.Date, t.Amount, t.Type, t.Description })
+                    .ToListAsync(ct);
+
+                var closeCutoffUtc = DateTime.SpecifyKind(targetCloseDate.Value.Date, DateTimeKind.Utc).AddHours(6);
+                var hasFutureCycles = pending.Any(t => t.Date > closeCutoffUtc);
+
+                if (hasFutureCycles)
+                {
+                    var cycleTotal = pending
+                        .Where(t => t.Date <= closeCutoffUtc && !IsCardPaymentCredit(t.Type, t.Description))
+                        .Sum(t => t.Type == TransactionType.Debit ? Math.Abs(t.Amount) : -Math.Abs(t.Amount));
+
+                    targetStatementBalance = cycleTotal > 0m ? cycleTotal : null;
+                }
+                else
+                {
+                    targetStatementBalance = null;
+                }
+            }
+        }
+
+        var changed = false;
+        changed |= SetIfChanged(() => card.BalanceCloseDate, v => card.BalanceCloseDate = v, NormalizeUtc(targetCloseDate));
+        changed |= SetIfChanged(() => card.BalanceDueDate, v => card.BalanceDueDate = v, NormalizeUtc(targetDueDate));
+        changed |= SetIfChanged(() => card.MinimumPayment, v => card.MinimumPayment = v, targetMinPayment);
+        changed |= SetIfChanged(() => card.LastStatementBalance, v => card.LastStatementBalance = v, targetStatementBalance);
+
+        if (changed)
+        {
+            card.UpdatedAt = DateTime.UtcNow;
+        }
+
+        return changed;
+    }
+
+    private static DateTime? NormalizeUtc(DateTime? value) => value switch
+    {
+        null => null,
+        { Kind: DateTimeKind.Utc } => value,
+        { Kind: DateTimeKind.Unspecified } => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc),
+        _ => value.Value.ToUniversalTime(),
+    };
+
+    private static bool IsCardPaymentCredit(TransactionType type, string? description) =>
+        type == TransactionType.Credit
+        && !string.IsNullOrWhiteSpace(description)
+        && description.Contains("pagamento", StringComparison.OrdinalIgnoreCase);
 
     private async Task UpsertInvestmentAsync(Connection connection, ProviderInvestment pi, SyncCounts counts, CancellationToken ct)
     {

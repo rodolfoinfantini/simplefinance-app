@@ -504,4 +504,143 @@ public class SyncConnectionUseCaseTests
         Assert.Single(transferDetection.CalledWithUserIds);
         Assert.Equal(connection.UserId, transferDetection.CalledWithUserIds[0]);
     }
+
+    [Fact]
+    public async Task SyncConnectionAsync_CreditCardWithUnpaidBill_SetsExactLastStatementBalanceAndDates()
+    {
+        await using var db = CreateDbContext();
+        var connection = SeedConnection(db);
+        var closeDate = new DateTime(2026, 11, 15, 0, 0, 0, DateTimeKind.Utc);
+        var dueDate = new DateTime(2026, 11, 20, 0, 0, 0, DateTimeKind.Utc);
+        var provider = new FakeFinancialDataProvider
+        {
+            Accounts =
+            [
+                new ProviderAccount("acc-mp-card", "CREDIT", "CREDIT_CARD", "Mercado Pago", null, null, null, 12373.44m, "BRL",
+                    new ProviderCreditData("VISA", "GOLD", null, 23600m, 11226.56m, null, null, null, "ACTIVE", "MAIN")),
+            ],
+            BillsByAccountId = new Dictionary<string, List<ProviderCreditCardBill>>
+            {
+                ["acc-mp-card"] =
+                [
+                    new ProviderCreditCardBill("bill-nov", dueDate, closeDate, 5168.80m, 775.32m, 1000m),
+                    new ProviderCreditCardBill("bill-oct", dueDate.AddMonths(-1), closeDate.AddMonths(-1), 5991.50m, 898.73m, 5991.50m),
+                ],
+            },
+        };
+        var sut = CreateSut(db, provider);
+
+        await sut.SyncConnectionAsync(connection.Id, SyncTrigger.Manual, CancellationToken.None);
+
+        var card = await db.CreditCardDetails.SingleAsync();
+        Assert.Equal(4168.80m, card.LastStatementBalance);
+        Assert.Equal(closeDate, card.BalanceCloseDate);
+        Assert.Equal(dueDate, card.BalanceDueDate);
+        Assert.Equal(775.32m, card.MinimumPayment);
+    }
+
+    [Fact]
+    public async Task SyncConnectionAsync_CreditCardWithPaidBillAndFutureInstallments_ProjectsDatesAndIsolatesActiveCycle()
+    {
+        await using var db = CreateDbContext();
+        var connection = SeedConnection(db);
+
+        // Anchor relative to today BRT so projection always lands on the current unpaid cycle.
+        var todayBrt = DateTime.UtcNow.AddHours(-3).Date;
+        var expectedDue = DateTime.SpecifyKind(todayBrt.AddDays(1), DateTimeKind.Utc);
+        var expectedClose = expectedDue.AddDays(-5);
+        var prevPaidDue = expectedDue.AddMonths(-1);
+        var prevPaidClose = expectedClose.AddMonths(-1);
+
+        var provider = new FakeFinancialDataProvider
+        {
+            Accounts =
+            [
+                new ProviderAccount("acc-mp-card", "CREDIT", "CREDIT_CARD", "Mercado Pago", null, null, null, 12373.44m, "BRL",
+                    new ProviderCreditData("VISA", "GOLD", null, 23600m, 11226.56m, null, null, null, "ACTIVE", "MAIN")),
+            ],
+            BillsByAccountId = new Dictionary<string, List<ProviderCreditCardBill>>
+            {
+                ["acc-mp-card"] =
+                [
+                    new ProviderCreditCardBill("bill-prev", prevPaidDue, prevPaidClose, 5991.50m, 898.73m, 5991.50m),
+                ],
+            },
+            TransactionsByAccountId = new Dictionary<string, List<ProviderTransaction>>
+            {
+                ["acc-mp-card"] =
+                [
+                    // Active cycle debit (before closing cutoff)
+                    new ProviderTransaction("t-cur-1", "acc-mp-card", expectedClose.AddDays(-2), "Mercado", null,
+                        3000m, 3000m, null, "BRL", "PENDING", "DEBIT", null, null, null, null, null, null, null, null, null),
+                    // Active cycle installment posted at 03:00 UTC on closing day (included in <= 06:00 UTC cutoff)
+                    new ProviderTransaction("t-cur-2", "acc-mp-card", expectedClose.AddHours(3), "Parcela 1/3", null,
+                        2195.70m, 2195.70m, null, "BRL", "PENDING", "DEBIT", null, null, null, null, 1, 3, 6587.10m, null, null),
+                    // Refund in active cycle (reduces invoice)
+                    new ProviderTransaction("t-cur-refund", "acc-mp-card", expectedClose.AddDays(-1), "Estorno loja", null,
+                        -26.90m, -26.90m, null, "BRL", "PENDING", "CREDIT", null, null, null, null, null, null, null, null, null),
+                    // Payment credit (must NOT reduce active invoice)
+                    new ProviderTransaction("t-cur-payment", "acc-mp-card", expectedClose.AddDays(-3), "Pagamento de fatura", null,
+                        -5991.50m, -5991.50m, null, "BRL", "PENDING", "CREDIT", null, null, null, null, null, null, null, null, null),
+                    // Next cycle (after closing cutoff)
+                    new ProviderTransaction("t-next-1", "acc-mp-card", expectedClose.AddDays(2), "Compra dez", null,
+                        2793.11m, 2793.11m, null, "BRL", "PENDING", "DEBIT", null, null, null, null, null, null, null, null, null),
+                    // Future installment (month + 2)
+                    new ProviderTransaction("t-future-1", "acc-mp-card", expectedClose.AddMonths(2), "Parcela 3/3", null,
+                        4384.63m, 4384.63m, null, "BRL", "PENDING", "DEBIT", null, null, null, null, 3, 3, 6587.10m, null, null),
+                ],
+            },
+        };
+        var sut = CreateSut(db, provider);
+
+        await sut.SyncConnectionAsync(connection.Id, SyncTrigger.Manual, CancellationToken.None);
+
+        var card = await db.CreditCardDetails.SingleAsync();
+        Assert.Equal(expectedClose, card.BalanceCloseDate);
+        Assert.Equal(expectedDue, card.BalanceDueDate);
+        Assert.Equal(5168.80m, card.LastStatementBalance);
+    }
+
+    [Fact]
+    public async Task SyncConnectionAsync_CreditCardWithPaidBillAndNoFutureCycles_ProjectsDatesAndKeepsNullLastStatementBalance()
+    {
+        await using var db = CreateDbContext();
+        var connection = SeedConnection(db);
+
+        var todayBrt = DateTime.UtcNow.AddHours(-3).Date;
+        var lastPaidDue = DateTime.SpecifyKind(todayBrt.AddDays(-3), DateTimeKind.Utc);
+        var lastPaidClose = lastPaidDue.AddDays(-7);
+
+        var provider = new FakeFinancialDataProvider
+        {
+            Accounts =
+            [
+                new ProviderAccount("acc-nubank", "CREDIT", "CREDIT_CARD", "platinum", null, null, null, 451.85m, "BRL",
+                    new ProviderCreditData("MASTERCARD", "PLATINUM", null, 5000m, 4548.15m, null, null, null, "ACTIVE", "MAIN")),
+            ],
+            BillsByAccountId = new Dictionary<string, List<ProviderCreditCardBill>>
+            {
+                ["acc-nubank"] =
+                [
+                    new ProviderCreditCardBill("bill-nu", lastPaidDue, lastPaidClose, 1298.17m, 194.73m, 1298.17m),
+                ],
+            },
+            TransactionsByAccountId = new Dictionary<string, List<ProviderTransaction>>
+            {
+                ["acc-nubank"] =
+                [
+                    new ProviderTransaction("t-nu-1", "acc-nubank", DateTime.SpecifyKind(todayBrt, DateTimeKind.Utc), "Padaria", null,
+                        451.85m, 451.85m, null, "BRL", "PENDING", "DEBIT", null, null, null, null, null, null, null, null, null),
+                ],
+            },
+        };
+        var sut = CreateSut(db, provider);
+
+        await sut.SyncConnectionAsync(connection.Id, SyncTrigger.Manual, CancellationToken.None);
+
+        var card = await db.CreditCardDetails.SingleAsync();
+        Assert.Equal(lastPaidClose.AddMonths(1), card.BalanceCloseDate);
+        Assert.Equal(lastPaidDue.AddMonths(1), card.BalanceDueDate);
+        Assert.Null(card.LastStatementBalance);
+    }
 }

@@ -19,6 +19,8 @@ internal sealed class FakeFinancialDataProvider : IFinancialDataProvider
 
     public Dictionary<string, List<ProviderTransaction>> TransactionsByAccountId { get; set; } = [];
 
+    public Dictionary<string, List<ProviderCreditCardBill>> BillsByAccountId { get; set; } = [];
+
     public ProviderItemStatus ItemStatus { get; set; } =
         new("UPDATED", "SUCCESS", null, null, null, 1, "TestConnector", "Test Bank", null);
 
@@ -61,6 +63,14 @@ internal sealed class FakeFinancialDataProvider : IFinancialDataProvider
 
     public Task<IReadOnlyList<ProviderInvestment>> GetInvestmentsAsync(string pluggyItemId, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ProviderInvestment>>(Investments);
+
+    public Task<IReadOnlyList<ProviderCreditCardBill>> GetCreditCardBillsAsync(string pluggyAccountId, CancellationToken ct)
+    {
+        IReadOnlyList<ProviderCreditCardBill> result = BillsByAccountId.TryGetValue(pluggyAccountId, out var list)
+            ? list
+            : [];
+        return Task.FromResult(result);
+    }
 
     public Task TriggerItemUpdateAsync(string pluggyItemId, CancellationToken ct) => Task.CompletedTask;
 

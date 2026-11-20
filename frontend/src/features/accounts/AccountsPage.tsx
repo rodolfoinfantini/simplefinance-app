@@ -11,7 +11,7 @@ import { useAccountsQuery, useToggleAccountHideMutation, type AccountResponse } 
 
 function formatShortDate(dateString: string | null): string {
   if (!dateString) return '—'
-  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(new Date(dateString))
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'UTC' }).format(new Date(dateString))
 }
 
 function TileSkeleton() {
@@ -123,6 +123,12 @@ function CreditCardTile({ account }: { account: AccountResponse }) {
               showSign={false}
               className="fs-3 fw-semibold"
             />
+            {creditCard.nextStatementBalance != null && creditCard.nextStatementBalance > 0 && (
+              <p className="text-muted small mt-1 mb-0">
+                {t('creditCard.nextInvoice')}{' '}
+                <MoneyText amount={creditCard.nextStatementBalance} variant="neutral" showSign={false} className="text-body fw-medium" />
+              </p>
+            )}
           </div>
 
           {creditCard.creditLimit != null && usedAmount != null && progressNow != null && (

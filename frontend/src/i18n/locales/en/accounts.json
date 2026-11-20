@@ -16,6 +16,7 @@
   },
   "creditCard": {
     "currentInvoice": "Current invoice",
+    "nextInvoice": "Next invoice:",
     "usedOf": "used of",
     "available": "Available",
     "limit": "Limit",

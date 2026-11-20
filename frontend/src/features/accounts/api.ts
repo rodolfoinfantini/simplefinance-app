@@ -21,6 +21,7 @@ export interface CreditCardResponse {
   balanceDueDate: string | null
   minimumPayment: number | null
   lastStatementBalance: number | null
+  nextStatementBalance?: number | null
   status: string
   holderType: string | null
 }

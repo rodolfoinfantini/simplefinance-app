@@ -5,6 +5,7 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using SimpleFinance.Application.Accounts.ToggleHide;
 using SimpleFinance.Domain.Entities;
+using SimpleFinance.Domain.Enums;
 using SimpleFinance.Infrastructure.Persistence;
 
 namespace SimpleFinance.Api.Endpoints;
@@ -91,10 +92,54 @@ public static class AccountsEndpoints
             .SelectMany(x => x.Conns.DefaultIfEmpty(), (x, conn) => new { x.Account, x.Card, Connection = conn })
             .ToListAsync(ct);
 
-        return rows.Select(r => ToResponse(r.Account, r.Card, r.Connection?.InstitutionName)).ToList();
+        var creditCardsWithCloseDate = rows
+            .Where(r => r.Account.Type == AccountType.Credit && r.Card?.BalanceCloseDate is not null)
+            .Select(r => new { r.Account.Id, CloseDate = r.Card!.BalanceCloseDate!.Value })
+            .ToList();
+
+        var nextStatementByAccountId = new Dictionary<Guid, decimal?>();
+        if (creditCardsWithCloseDate.Count > 0)
+        {
+            var cardIds = creditCardsWithCloseDate.Select(c => c.Id).ToList();
+            var pendingTxns = await db.Transactions
+                .Where(t => cardIds.Contains(t.AccountId)
+                    && t.Status == TransactionStatus.Pending
+                    && t.BillId == null)
+                .Select(t => new { t.AccountId, t.Date, t.Amount, t.Type, t.Description })
+                .ToListAsync(ct);
+
+            foreach (var c in creditCardsWithCloseDate)
+            {
+                var closeCutoffUtc = DateTime.SpecifyKind(c.CloseDate.Date, DateTimeKind.Utc).AddHours(6);
+                var nextCloseCutoffUtc = DateTime.SpecifyKind(c.CloseDate.Date.AddMonths(1), DateTimeKind.Utc).AddHours(6);
+
+                var nextTotal = pendingTxns
+                    .Where(t => t.AccountId == c.Id
+                        && t.Date > closeCutoffUtc
+                        && t.Date <= nextCloseCutoffUtc
+                        && !(t.Type == TransactionType.Credit
+                            && !string.IsNullOrWhiteSpace(t.Description)
+                            && t.Description.Contains("pagamento", StringComparison.OrdinalIgnoreCase)))
+                    .Sum(t => t.Type == TransactionType.Debit ? Math.Abs(t.Amount) : -Math.Abs(t.Amount));
+
+                if (nextTotal > 0m)
+                {
+                    nextStatementByAccountId[c.Id] = nextTotal;
+                }
+            }
+        }
+
+        return rows
+            .Select(r => ToResponse(
+                r.Account,
+                r.Card,
+                r.Connection?.InstitutionName,
+                nextStatementByAccountId.GetValueOrDefault(r.Account.Id)))
+            .ToList();
     }
 
-    private static AccountResponse ToResponse(Account a, CreditCardDetail? card, string? institutionName) => new(
+    private static AccountResponse ToResponse(
+        Account a, CreditCardDetail? card, string? institutionName, decimal? nextStatementBalance = null) => new(
         a.Id,
         a.ConnectionId,
         institutionName,
@@ -119,6 +164,7 @@ public static class AccountsEndpoints
                 card.BalanceDueDate,
                 card.MinimumPayment,
                 card.LastStatementBalance ?? a.Balance,
+                nextStatementBalance,
                 card.Status.ToString(),
                 card.HolderType));
 
@@ -153,6 +199,7 @@ public static class AccountsEndpoints
         DateTime? BalanceDueDate,
         decimal? MinimumPayment,
         decimal? LastStatementBalance,
+        decimal? NextStatementBalance,
         string Status,
         string? HolderType);
 }

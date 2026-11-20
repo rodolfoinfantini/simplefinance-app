@@ -196,6 +196,80 @@ public class AccountsEndpointsTests
         Assert.Equal(12373.44m, card.GetProperty("creditCard").GetProperty("lastStatementBalance").GetDecimal());
     }
 
+    [Fact]
+    public async Task GetAccounts_CreditCardWithNextCyclePendingTransactions_ComputesNextStatementBalance()
+    {
+        using var factory = new AccountsApiFactory();
+        using var client = factory.CreateClient();
+        var (accessToken, userId) = await SetupAndLoginAsync(client);
+
+        var connection = await SeedConnectionAsync(factory, userId, "Mercado Pago", "item-mp-next");
+        var (account, detail) = await SeedCreditAccountAsync(factory, userId, connection.Id, "Mercado Pago", 12373.44m);
+        var closeDate = new DateTime(2026, 11, 15, 0, 0, 0, DateTimeKind.Utc);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SimpleFinanceDbContext>();
+            var tracked = await db.CreditCardDetails.SingleAsync(c => c.Id == detail.Id);
+            tracked.BalanceCloseDate = closeDate;
+            tracked.BalanceDueDate = new DateTime(2026, 11, 20, 0, 0, 0, DateTimeKind.Utc);
+            tracked.LastStatementBalance = 5168.80m;
+
+            var now = DateTime.UtcNow;
+            db.Transactions.AddRange(
+                // Active cycle pending (excluded from nextStatementBalance)
+                new Transaction
+                {
+                    Id = Guid.NewGuid(), UserId = userId, AccountId = account.Id, PluggyTransactionId = "t-cur",
+                    Date = new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc), Description = "Nov purchase",
+                    Amount = 5168.80m, CurrencyCode = "BRL", Status = TransactionStatus.Pending, Type = TransactionType.Debit,
+                    CreatedAt = now, UpdatedAt = now,
+                },
+                // Next cycle pending debit (included)
+                new Transaction
+                {
+                    Id = Guid.NewGuid(), UserId = userId, AccountId = account.Id, PluggyTransactionId = "t-next-1",
+                    Date = new DateTime(2026, 11, 18, 12, 0, 0, DateTimeKind.Utc), Description = "Dec purchase",
+                    Amount = 2900.01m, CurrencyCode = "BRL", Status = TransactionStatus.Pending, Type = TransactionType.Debit,
+                    CreatedAt = now, UpdatedAt = now,
+                },
+                // Next cycle refund credit (reduces nextStatementBalance)
+                new Transaction
+                {
+                    Id = Guid.NewGuid(), UserId = userId, AccountId = account.Id, PluggyTransactionId = "t-next-refund",
+                    Date = new DateTime(2026, 11, 19, 12, 0, 0, DateTimeKind.Utc), Description = "Estorno compra",
+                    Amount = -80.00m, CurrencyCode = "BRL", Status = TransactionStatus.Pending, Type = TransactionType.Credit,
+                    CreatedAt = now, UpdatedAt = now,
+                },
+                // Next cycle payment credit (ignored)
+                new Transaction
+                {
+                    Id = Guid.NewGuid(), UserId = userId, AccountId = account.Id, PluggyTransactionId = "t-next-pay",
+                    Date = new DateTime(2026, 11, 20, 12, 0, 0, DateTimeKind.Utc), Description = "Pagamento fatura",
+                    Amount = -5168.80m, CurrencyCode = "BRL", Status = TransactionStatus.Pending, Type = TransactionType.Credit,
+                    CreatedAt = now, UpdatedAt = now,
+                },
+                // Month + 2 future installment (excluded from nextStatementBalance)
+                new Transaction
+                {
+                    Id = Guid.NewGuid(), UserId = userId, AccountId = account.Id, PluggyTransactionId = "t-jan",
+                    Date = new DateTime(2026, 12, 20, 12, 0, 0, DateTimeKind.Utc), Description = "Jan installment",
+                    Amount = 1500.00m, CurrencyCode = "BRL", Status = TransactionStatus.Pending, Type = TransactionType.Debit,
+                    CreatedAt = now, UpdatedAt = now,
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.SendAsync(AuthedGet("/api/accounts", accessToken));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var card = body.EnumerateArray().Single(a => a.GetProperty("id").GetString() == account.Id.ToString());
+        var creditCard = card.GetProperty("creditCard");
+        Assert.Equal(5168.80m, creditCard.GetProperty("lastStatementBalance").GetDecimal());
+        Assert.Equal(2820.01m, creditCard.GetProperty("nextStatementBalance").GetDecimal());
+    }
+
     private static async Task<(string AccessToken, Guid UserId)> SetupAndLoginAsync(HttpClient client)
     {
         await client.PostAsJsonAsync("/api/auth/setup", new { name = "Owner", email = SetupEmail, password = SetupPassword });
