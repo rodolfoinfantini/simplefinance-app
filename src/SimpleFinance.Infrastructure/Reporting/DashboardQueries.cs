@@ -56,10 +56,6 @@ public sealed class DashboardQueries(IDbConnectionFactory connectionFactory) : I
                             AND a."IsHidden" = false AND a."DeletedAt" IS NULL), 0)
                 + COALESCE((SELECT SUM(COALESCE(i."Balance", CASE WHEN i."Value" IS NOT NULL AND i."Quantity" IS NOT NULL THEN i."Value" * i."Quantity" ELSE i."Value" END, 0)) FROM "Investments" i
                             WHERE i."UserId" = @UserId AND i."DeletedAt" IS NULL), 0)
-                - COALESCE((SELECT SUM(COALESCE(ccd."LastStatementBalance", ca."Balance", 0)) FROM "Accounts" ca
-                            LEFT JOIN "CreditCardDetails" ccd ON ccd."AccountId" = ca."Id"
-                            WHERE ca."UserId" = @UserId AND ca."Type" = @AcctCreditType
-                              AND ca."IsHidden" = false AND ca."DeletedAt" IS NULL), 0)
                     AS "NetWorth",
 
                 COALESCE((SELECT SUM(ba."Balance") FROM "Accounts" ba
@@ -213,10 +209,9 @@ public sealed class DashboardQueries(IDbConnectionFactory connectionFactory) : I
 
     /// <summary>
     /// INV-04: the exact same net-worth figure GetTotalsAsync's "NetWorth" column already computes
-    /// (non-hidden Bank accounts' Balance + investments effective Balance − non-hidden Credit
-    /// accounts' open invoice debt via COALESCE(LastStatementBalance, Account.Balance, 0)), split
-    /// into the 3 named composition columns NetWorthSnapshotJob upserts plus the same combined
-    /// NetWorth as a 4th column computed in the same SELECT -- never a second, divergent formula.
+    /// (non-hidden Bank accounts' Balance + investments effective Balance; credit card balances are
+    /// reported separately in CreditCardDebt and NOT subtracted from NetWorth because many Brazilian
+    /// banks report total future installments in Pluggy's credit account balance).
     /// </summary>
     public async Task<NetWorthComposition> GetNetWorthCompositionAsync(Guid userId, CancellationToken ct)
     {
@@ -242,10 +237,6 @@ public sealed class DashboardQueries(IDbConnectionFactory connectionFactory) : I
                             AND a2."IsHidden" = false AND a2."DeletedAt" IS NULL), 0)
                 + COALESCE((SELECT SUM(COALESCE(i2."Balance", CASE WHEN i2."Value" IS NOT NULL AND i2."Quantity" IS NOT NULL THEN i2."Value" * i2."Quantity" ELSE i2."Value" END, 0)) FROM "Investments" i2
                             WHERE i2."UserId" = @UserId AND i2."DeletedAt" IS NULL), 0)
-                - COALESCE((SELECT SUM(COALESCE(ccd2."LastStatementBalance", ca2."Balance", 0)) FROM "Accounts" ca2
-                            LEFT JOIN "CreditCardDetails" ccd2 ON ccd2."AccountId" = ca2."Id"
-                            WHERE ca2."UserId" = @UserId AND ca2."Type" = @AcctCreditType
-                              AND ca2."IsHidden" = false AND ca2."DeletedAt" IS NULL), 0)
                     AS "NetWorth";
             """;
 

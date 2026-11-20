@@ -113,12 +113,12 @@ public class NetWorthSnapshotJobTests
 
         var composition = await CreateDashboardQueries().GetNetWorthCompositionAsync(userId, CancellationToken.None);
 
-        // AccountsBalance includes BOTH the Bank and Credit account balances -- matching
-        // GetTotalsAsync's NetWorth term exactly, not TotalBalance's Bank-only term.
+        // AccountsBalance sums Bank accounts only; CreditCardDebt is tracked separately without
+        // subtracting future credit-card installments from NetWorth.
         Assert.Equal(5000m, composition.AccountsBalance);
         Assert.Equal(2000m, composition.InvestmentsBalance);
         Assert.Equal(800m, composition.CreditCardDebt);
-        Assert.Equal(5000m + 2000m - 800m, composition.NetWorth);
+        Assert.Equal(5000m + 2000m, composition.NetWorth);
     }
 
     [Fact]

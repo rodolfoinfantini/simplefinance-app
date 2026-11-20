@@ -16,7 +16,7 @@ public sealed class NetWorthTool(INetWorthReader reader) : IAssistantTool
 {
     private static readonly LlmTool ToolSchemaValue = new(
         "net_worth",
-        "Patrimônio líquido atual (contas + investimentos − dívida de cartão).",
+        "Patrimônio atual (contas bancárias + investimentos; saldo comprometido em cartões de crédito é retornado separadamente em creditCardDebt e não é subtraído de netWorth).",
         ToolSchema.Parse("""
         {
           "type": "object",

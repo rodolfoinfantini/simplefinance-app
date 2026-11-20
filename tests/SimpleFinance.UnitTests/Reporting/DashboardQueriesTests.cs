@@ -202,11 +202,11 @@ public class DashboardQueriesTests
         var totals = await CreateQueries().GetTotalsAsync(userId, periodStart, periodEnd, CancellationToken.None);
 
         Assert.Equal(300m, totals.TotalCardDebt);
-        Assert.Equal(-300m, totals.NetWorth);
+        Assert.Equal(0m, totals.NetWorth);
     }
 
     [Fact]
-    public async Task GetTotalsAndComposition_CreditCardWithPositiveBalanceAndNullLastStatementBalance_SubtractedAsDebtNotAddedToAccounts()
+    public async Task GetTotalsAndComposition_CreditCardWithPositiveBalanceAndNullLastStatementBalance_ReportedSeparatelyWithoutAffectingNetWorth()
     {
         var userId = Guid.NewGuid();
         var periodStart = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -228,7 +228,7 @@ public class DashboardQueriesTests
 
         Assert.Equal(751.31m, totals.TotalBalance);
         Assert.Equal(14673.06m, totals.TotalCardDebt);
-        Assert.Equal(751.31m + 654.01m - 14673.06m, totals.NetWorth);
+        Assert.Equal(751.31m + 654.01m, totals.NetWorth);
         Assert.Equal(751.31m, composition.AccountsBalance);
         Assert.Equal(654.01m, composition.InvestmentsBalance);
         Assert.Equal(14673.06m, composition.CreditCardDebt);
