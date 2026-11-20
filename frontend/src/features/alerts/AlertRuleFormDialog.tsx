@@ -8,7 +8,7 @@ import Select from 'react-select'
 import { z } from 'zod'
 
 import { useNotificationContext } from '@/shell/toast/useNotificationContext'
-import { useAccountsQuery } from '@/features/accounts/api'
+import { formatAccountOptionLabel, useAccountsQuery } from '@/features/accounts/api'
 import { useCategoriesQuery } from '@/features/categories/api'
 
 import {
@@ -167,7 +167,10 @@ export function AlertRuleFormDialog({ show, onHide, editTarget, accessToken }: A
   const type = form.watch('type')
 
   const categoryOptions: SelectOption[] = categories.map((category) => ({ value: category.id, label: category.name }))
-  const accountOptions: SelectOption[] = accounts.map((account) => ({ value: account.id, label: account.name }))
+  const accountOptions: SelectOption[] = accounts.map((account) => ({
+    value: account.id,
+    label: formatAccountOptionLabel(account),
+  }))
 
   async function onSubmit(values: AlertRuleFormValues) {
     const fields = {

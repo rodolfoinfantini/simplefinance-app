@@ -48,6 +48,12 @@ export interface ToggleAccountHideRequest {
   isHidden: boolean
 }
 
+export function formatAccountOptionLabel(account: AccountResponse): string {
+  const base = account.institutionName ?? account.name
+  const kind = account.type === 'Credit' ? 'Cartão' : 'Conta'
+  return account.numberMasked ? `${base} — ${kind} (${account.numberMasked})` : `${base} — ${kind}`
+}
+
 export function useAccountsQuery(accessToken: string) {
   return useQuery({
     queryKey: ['accounts', accessToken],

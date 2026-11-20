@@ -33,7 +33,7 @@ import { MoneyText } from '@/components/MoneyText'
 import { useNotificationContext } from '@/shell/toast/useNotificationContext'
 import { useAuth } from '@/features/auth/useAuth'
 import { downloadExport } from '@/lib/downloadExport'
-import { useAccountsQuery } from '@/features/accounts/api'
+import { formatAccountOptionLabel, useAccountsQuery } from '@/features/accounts/api'
 import { TransactionDetailSheet } from '@/features/transactions/TransactionDetailSheet'
 import { TransactionsPager } from '@/features/transactions/TransactionsPager'
 import { TransactionsTable } from '@/features/transactions/TransactionsTable'
@@ -377,8 +377,9 @@ export function TransactionsPage() {
 
   const accounts = (accountsQuery.data ?? []).map((account) => ({
     id: account.id,
-    label: account.institutionName ?? account.name,
+    label: formatAccountOptionLabel(account),
   }))
+  const accountLabelById = new Map(accounts.map((a) => [a.id, a.label]))
   const categories: CategoryOption[] = (categoriesQuery.data ?? []).map((category) => ({
     id: category.id,
     name: category.name,
@@ -424,7 +425,9 @@ export function TransactionsPage() {
     }),
     columnHelper.accessor('accountName', {
       header: t('table.account'),
-      cell: ({ getValue }) => <span className="text-muted">{getValue()}</span>,
+      cell: ({ row, getValue }) => (
+        <span className="text-muted">{accountLabelById.get(row.original.accountId) ?? getValue()}</span>
+      ),
     }),
     columnHelper.display({
       id: 'category',

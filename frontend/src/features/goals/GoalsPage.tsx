@@ -19,7 +19,7 @@ import { parseAmount } from '@/lib/amount'
 
 import { MoneyText } from '@/components/MoneyText'
 import { useNotificationContext } from '@/shell/toast/useNotificationContext'
-import { useAccountsQuery } from '@/features/accounts/api'
+import { formatAccountOptionLabel, useAccountsQuery } from '@/features/accounts/api'
 import { useAuth } from '@/features/auth/useAuth'
 import { resolveCategoryIcon } from '@/features/categories/icons'
 import { useInvestmentPositionsQuery } from '@/features/investments/api'
@@ -231,7 +231,9 @@ export function GoalsPage() {
     return aArchived - bArchived
   })
 
-  const accountNameById = new Map((accountsQuery.data ?? []).map((account) => [account.id, account.name]))
+  const accountNameById = new Map(
+    (accountsQuery.data ?? []).map((account) => [account.id, formatAccountOptionLabel(account)])
+  )
   const investmentNameById = new Map(
     (investmentsQuery.data?.items ?? []).map((investment) => [investment.id, investment.name])
   )

@@ -8,7 +8,7 @@ import { amountValueAs } from '@/lib/amount'
 import { z } from 'zod'
 
 import { useNotificationContext } from '@/shell/toast/useNotificationContext'
-import type { AccountResponse } from '@/features/accounts/api'
+import { formatAccountOptionLabel, type AccountResponse } from '@/features/accounts/api'
 import { useAuth } from '@/features/auth/useAuth'
 import { CATEGORY_ICON_NAMES, resolveCategoryIcon } from '@/features/categories/icons'
 import type { InvestmentPositionItem } from '@/features/investments/api'
@@ -137,7 +137,7 @@ export function GoalDialog({ show, onHide, editTarget, accounts, investments }: 
   const linkedSourceOptions = [
     ...accounts.map((account) => ({
       value: `${ACCOUNT_PREFIX}${account.id}`,
-      label: t('dialog.accountOption', { name: account.name }),
+      label: t('dialog.accountOption', { name: formatAccountOptionLabel(account) }),
     })),
     ...investments.map((investment) => ({
       value: `${INVESTMENT_PREFIX}${investment.id}`,
