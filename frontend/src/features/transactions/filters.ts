@@ -47,6 +47,31 @@ export function buildTransactionsQueryString(filters: TransactionFilters, page: 
 }
 
 /**
+ * Builds the `?format=csv|xlsx&dateFrom=&...` query string for
+ * GET /api/export/transactions so exports mirror the active on-screen filters.
+ */
+export function buildTransactionExportQueryString(
+  filters: TransactionFilters,
+  format: 'csv' | 'xlsx'
+): string {
+  const params = new URLSearchParams()
+  params.set('format', format)
+
+  if (filters.dateFrom) params.set('dateFrom', filters.dateFrom)
+  if (filters.dateTo) params.set('dateTo', filters.dateTo)
+  if (filters.accountId) params.set('accountId', filters.accountId)
+  if (filters.categoryId) params.set('categoryId', filters.categoryId)
+  if (filters.type) params.set('type', filters.type)
+  if (filters.status) params.set('status', filters.status)
+  if (filters.amountMin !== undefined) params.set('amountMin', String(filters.amountMin))
+  if (filters.amountMax !== undefined) params.set('amountMax', String(filters.amountMax))
+  if (filters.search) params.set('search', filters.search)
+  if (filters.excludeTransfers) params.set('excludeTransfers', 'true')
+
+  return params.toString()
+}
+
+/**
  * True when at least one filter dimension is set to a non-default value --
  * drives the "Clear filters" button's conditional render and the mobile
  * "Filters" button's active-count Badge.

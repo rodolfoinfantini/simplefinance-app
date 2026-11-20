@@ -46,6 +46,7 @@ import {
 } from '@/features/transactions/api'
 import {
   activeFilterCount,
+  buildTransactionExportQueryString,
   isFilterActive,
   type TransactionFilters,
 } from '@/features/transactions/filters'
@@ -370,7 +371,12 @@ export function TransactionsPage() {
   async function handleExport(format: 'csv' | 'xlsx') {
     setExportPending(format)
     try {
-      await downloadExport(`/api/export/transactions?format=${format}`, token, `transactions.${format}`)
+      const effectiveFilters: TransactionFilters = {
+        ...filters,
+        search: searchInput.trim() || undefined,
+      }
+      const queryString = buildTransactionExportQueryString(effectiveFilters, format)
+      await downloadExport(`/api/export/transactions?${queryString}`, token, `transactions.${format}`)
     } catch {
       showNotification({ message: t('errors.export'), variant: 'danger' })
     } finally {

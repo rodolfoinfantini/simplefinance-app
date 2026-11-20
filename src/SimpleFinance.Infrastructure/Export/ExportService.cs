@@ -22,7 +22,8 @@ public sealed record TransactionExportFilters(
     string? Status,
     decimal? AmountMin,
     decimal? AmountMax,
-    string? Search);
+    string? Search,
+    bool? ExcludeTransfers = null);
 
 /// <summary>
 /// Optional query parameters a report export may need, depending on which of the 7 report types
@@ -67,12 +68,14 @@ public sealed class ExportService(SimpleFinanceDbContext db)
 
         if (filters.DateFrom is not null)
         {
-            query = query.Where(t => t.Date >= filters.DateFrom.Value);
+            var fromUtc = NormalizeUtc(filters.DateFrom.Value);
+            query = query.Where(t => t.Date >= fromUtc);
         }
 
         if (filters.DateTo is not null)
         {
-            query = query.Where(t => t.Date <= filters.DateTo.Value);
+            var toUtc = NormalizeDateToEndOfDayUtc(filters.DateTo.Value);
+            query = query.Where(t => t.Date <= toUtc);
         }
 
         if (filters.AccountId is not null)
@@ -82,7 +85,14 @@ public sealed class ExportService(SimpleFinanceDbContext db)
 
         if (filters.CategoryId is not null)
         {
-            query = query.Where(t => t.CategoryId == filters.CategoryId.Value);
+            var childCategoryIds = await db.Categories
+                .Where(c => c.UserId == userId && c.ParentCategoryId == filters.CategoryId.Value)
+                .Select(c => (Guid?)c.Id)
+                .ToListAsync(ct);
+
+            query = childCategoryIds.Count > 0
+                ? query.Where(t => t.CategoryId == filters.CategoryId.Value || childCategoryIds.Contains(t.CategoryId))
+                : query.Where(t => t.CategoryId == filters.CategoryId.Value);
         }
 
         if (filters.Type is not null)
@@ -96,6 +106,11 @@ public sealed class ExportService(SimpleFinanceDbContext db)
             };
         }
         else
+        {
+            query = query.Where(t => !t.IsTransfer);
+        }
+
+        if (filters.ExcludeTransfers == true)
         {
             query = query.Where(t => !t.IsTransfer);
         }
@@ -378,6 +393,19 @@ public sealed class ExportService(SimpleFinanceDbContext db)
         var start = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var end = new DateTime(now.Year, now.Month, DateTime.DaysInMonth(now.Year, now.Month), 23, 59, 59, DateTimeKind.Utc);
         return (start, end);
+    }
+
+    private static DateTime NormalizeUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+        _ => value.ToUniversalTime(),
+    };
+
+    private static DateTime NormalizeDateToEndOfDayUtc(DateTime value)
+    {
+        var utc = NormalizeUtc(value);
+        return utc.TimeOfDay == TimeSpan.Zero ? utc.Date.AddDays(1).AddTicks(-1) : utc;
     }
 
     private static string FormatAmount(decimal amount) => amount.ToString("0.00", CultureInfo.InvariantCulture);

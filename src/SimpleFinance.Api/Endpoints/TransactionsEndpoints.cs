@@ -66,12 +66,22 @@ public static class TransactionsEndpoints
 
         if (dateFrom is not null)
         {
-            query = query.Where(t => t.Date >= dateFrom.Value);
+            var fromUtc = dateFrom.Value.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(dateFrom.Value, DateTimeKind.Utc)
+                : dateFrom.Value.ToUniversalTime();
+            query = query.Where(t => t.Date >= fromUtc);
         }
 
         if (dateTo is not null)
         {
-            query = query.Where(t => t.Date <= dateTo.Value);
+            var toUtc = dateTo.Value.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(dateTo.Value, DateTimeKind.Utc)
+                : dateTo.Value.ToUniversalTime();
+            if (toUtc.TimeOfDay == TimeSpan.Zero)
+            {
+                toUtc = toUtc.Date.AddDays(1).AddTicks(-1);
+            }
+            query = query.Where(t => t.Date <= toUtc);
         }
 
         if (accountId is not null)

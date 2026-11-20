@@ -116,6 +116,82 @@ public class ExportEndpointsTests
         Assert.Equal(3, lastRow); // header + 2 data rows
     }
 
+    [Fact]
+    public async Task ExportTransactions_Csv_AppliesAllQueryFilters_IncludingParentCategoryAndEndDate()
+    {
+        using var factory = new ExportApiFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await SetupAndLoginAsync(client);
+        var userId = DecodeUserIdFromToken(accessToken);
+
+        Guid accountAId;
+        Guid parentCategoryId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SimpleFinanceDbContext>();
+            var now = DateTime.UtcNow;
+
+            var accountA = new Account
+            {
+                Id = Guid.NewGuid(), UserId = userId, ConnectionId = Guid.NewGuid(),
+                PluggyAccountId = "acct-a", Type = AccountType.Bank, Subtype = AccountSubtype.CheckingAccount,
+                Name = "Bank A", Balance = 1000m, CurrencyCode = "BRL", CreatedAt = now, UpdatedAt = now,
+            };
+            var accountB = new Account
+            {
+                Id = Guid.NewGuid(), UserId = userId, ConnectionId = Guid.NewGuid(),
+                PluggyAccountId = "acct-b", Type = AccountType.Bank, Subtype = AccountSubtype.CheckingAccount,
+                Name = "Bank B", Balance = 500m, CurrencyCode = "BRL", CreatedAt = now, UpdatedAt = now,
+            };
+            accountAId = accountA.Id;
+
+            var parentCat = new Category
+            {
+                Id = Guid.NewGuid(), UserId = userId, Name = "Transporte", Type = CategoryType.Expense,
+                CreatedAt = now, UpdatedAt = now,
+            };
+            var childCat = new Category
+            {
+                Id = Guid.NewGuid(), UserId = userId, Name = "Uber", ParentCategoryId = parentCat.Id,
+                Type = CategoryType.Expense, CreatedAt = now, UpdatedAt = now,
+            };
+            var otherCat = new Category
+            {
+                Id = Guid.NewGuid(), UserId = userId, Name = "Alimentação", Type = CategoryType.Expense,
+                CreatedAt = now, UpdatedAt = now,
+            };
+            parentCategoryId = parentCat.Id;
+
+            db.Accounts.AddRange(accountA, accountB);
+            db.Categories.AddRange(parentCat, childCat, otherCat);
+
+            var matching = NewTransaction(userId, accountA.Id, new DateTime(2026, 11, 10, 18, 30, 0, DateTimeKind.Utc), 45m, TransactionType.Debit, "Uber Trip");
+            matching.CategoryId = childCat.Id;
+
+            var wrongAccount = NewTransaction(userId, accountB.Id, new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc), 45m, TransactionType.Debit, "Uber Trip");
+            wrongAccount.CategoryId = childCat.Id;
+
+            var wrongCategory = NewTransaction(userId, accountA.Id, new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc), 45m, TransactionType.Debit, "Uber Eats");
+            wrongCategory.CategoryId = otherCat.Id;
+
+            var outsideDate = NewTransaction(userId, accountA.Id, new DateTime(2026, 11, 15, 12, 0, 0, DateTimeKind.Utc), 45m, TransactionType.Debit, "Uber Trip");
+            outsideDate.CategoryId = childCat.Id;
+
+            db.Transactions.AddRange(matching, wrongAccount, wrongCategory, outsideDate);
+            await db.SaveChangesAsync();
+        }
+
+        var url = $"/api/export/transactions?format=csv&dateFrom=2026-11-01&dateTo=2026-11-10&accountId={accountAId}&categoryId={parentCategoryId}&type=expense&status=posted&amountMin=40&amountMax=50&search=uber&excludeTransfers=true";
+        var response = await client.SendAsync(AuthedGet(url, accessToken));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        var lines = body.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Length); // header + 1 matching row
+        Assert.Contains("Uber Trip", lines[1]);
+        Assert.DoesNotContain("Uber Eats", body);
+    }
+
     [Theory]
     [InlineData("spending-by-category")]
     [InlineData("income-expense")]

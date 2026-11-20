@@ -47,6 +47,7 @@ public static class ExportEndpoints
         decimal? amountMin,
         decimal? amountMax,
         string? search,
+        bool? excludeTransfers,
         ExportService exportService,
         ClaimsPrincipal principal,
         CancellationToken ct)
@@ -63,7 +64,7 @@ public static class ExportEndpoints
         }
 
         var filters = new TransactionExportFilters(
-            dateFrom, dateTo, accountId, categoryId, type, status, amountMin, amountMax, search);
+            dateFrom, dateTo, accountId, categoryId, type, status, amountMin, amountMax, search, excludeTransfers);
         var table = await exportService.BuildTransactionsTableAsync(userId.Value, filters, ct);
 
         var fileName = $"transactions-{DateTime.UtcNow:yyyyMMdd}";
