@@ -80,7 +80,14 @@ public static class TransactionsEndpoints
 
         if (categoryId is not null)
         {
-            query = query.Where(t => t.CategoryId == categoryId.Value);
+            var childCategoryIds = await db.Categories
+                .Where(c => c.UserId == userId.Value && c.ParentCategoryId == categoryId.Value)
+                .Select(c => (Guid?)c.Id)
+                .ToListAsync(ct);
+
+            query = childCategoryIds.Count > 0
+                ? query.Where(t => t.CategoryId == categoryId.Value || childCategoryIds.Contains(t.CategoryId))
+                : query.Where(t => t.CategoryId == categoryId.Value);
         }
 
         // Derived semantics (interfaces block, 03-03-PLAN.md): "income" = Credit && !IsTransfer,

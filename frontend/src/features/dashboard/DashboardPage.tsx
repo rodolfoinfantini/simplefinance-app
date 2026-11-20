@@ -18,6 +18,7 @@ import {
   useIncomeExpenseQuery,
   useNetWorthEvolutionQuery,
   useSpendingByCategoryQuery,
+  useSpendingByParentCategoryQuery,
   useUpcomingDueDatesQuery,
 } from '@/features/dashboard/api'
 import { PeriodSelector, thisMonthPeriod, type DashboardPeriod } from '@/features/dashboard/PeriodSelector'
@@ -57,6 +58,7 @@ export function DashboardPage() {
   const [netWorthRange, setNetWorthRange] = useState<6 | 12>(6)
 
   const summaryQuery = useDashboardSummaryQuery(token, period.dateFrom, period.dateTo)
+  const spendingByParentCategoryQuery = useSpendingByParentCategoryQuery(token, period.dateFrom, period.dateTo)
   const spendingByCategoryQuery = useSpendingByCategoryQuery(token, period.dateFrom, period.dateTo)
   const incomeExpenseQuery = useIncomeExpenseQuery(token)
   const netWorthEvolutionQuery = useNetWorthEvolutionQuery(token, netWorthRange)
@@ -64,6 +66,7 @@ export function DashboardPage() {
   const upcomingDueDatesQuery = useUpcomingDueDatesQuery(token)
 
   const summary = summaryQuery.data
+  const parentSpendingItems = spendingByParentCategoryQuery.data?.items ?? []
   const spendingItems = spendingByCategoryQuery.data?.items ?? []
   const netWorthPoints = netWorthEvolutionQuery.data?.points ?? []
   const incomeExpenseItems = incomeExpenseQuery.data?.items ?? []
@@ -120,6 +123,37 @@ export function DashboardPage() {
       <Row className="g-3 row-cols-1 row-cols-xl-2 mb-3">
         <Col>
           <ChartCard
+            title={t('chart.spendingByParentCategory.title')}
+            isLoading={spendingByParentCategoryQuery.isPending}
+            isError={spendingByParentCategoryQuery.isError}
+            onRetry={() => void spendingByParentCategoryQuery.refetch()}
+            isEmpty={!spendingByParentCategoryQuery.isPending && parentSpendingItems.length === 0}
+            emptyMessage={t('chart.spendingByParentCategory.emptyMessage')}
+          >
+            <CategoryBarChart
+              height={Math.max(280, parentSpendingItems.length * 34)}
+              items={parentSpendingItems.map((item) => ({
+                id: item.categoryId,
+                label:
+                  item.categoryId === null && item.categoryName === 'Uncategorized'
+                    ? t('chart.spendingByCategory.uncategorized')
+                    : item.categoryId === null && item.categoryName === 'Others'
+                      ? t('chart.spendingByCategory.others')
+                      : item.categoryName,
+                color: item.categoryColor,
+                amount: item.amount,
+                percent: item.percent,
+              }))}
+              onBarClick={(item) => {
+                const categoryParam = item.id ? `categoryId=${item.id}&` : ''
+                navigate(`/transactions?${categoryParam}dateFrom=${period.dateFrom}&dateTo=${period.dateTo}`)
+              }}
+            />
+          </ChartCard>
+        </Col>
+
+        <Col>
+          <ChartCard
             title={t('chart.spendingByCategory.title')}
             isLoading={spendingByCategoryQuery.isPending}
             isError={spendingByCategoryQuery.isError}
@@ -149,7 +183,9 @@ export function DashboardPage() {
             />
           </ChartCard>
         </Col>
+      </Row>
 
+      <Row className="g-3 row-cols-1 row-cols-xl-2 mb-3">
         <Col>
           <ChartCard
             title={t('chart.netWorthOverTime.title')}
@@ -181,9 +217,7 @@ export function DashboardPage() {
             />
           </ChartCard>
         </Col>
-      </Row>
 
-      <Row className="g-3 row-cols-1 row-cols-xl-2 mb-3">
         <Col>
           <ChartCard
             title={t('chart.incomeVsExpenses.title')}
@@ -194,7 +228,9 @@ export function DashboardPage() {
             <IncomeExpenseBarChart items={incomeExpenseItems} />
           </ChartCard>
         </Col>
+      </Row>
 
+      <Row className="g-3 row-cols-1 row-cols-xl-2">
         <Col>
           <ChartCard
             title={t('chart.budgetsAtRisk.title')}
@@ -216,9 +252,7 @@ export function DashboardPage() {
             </div>
           </ChartCard>
         </Col>
-      </Row>
 
-      <Row className="g-3 row-cols-1">
         <Col>
           <ChartCard
             title={t('chart.upcomingDueDates.title')}

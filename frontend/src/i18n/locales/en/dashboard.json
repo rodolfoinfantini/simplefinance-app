@@ -10,6 +10,10 @@
     "netThisMonth": "Net this month"
   },
   "chart": {
+    "spendingByParentCategory": {
+      "title": "Spending by parent category",
+      "emptyMessage": "No spending recorded for this period yet."
+    },
     "spendingByCategory": {
       "title": "Spending by category",
       "emptyMessage": "No spending recorded for this period yet.",

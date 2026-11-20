@@ -138,6 +138,45 @@ public sealed class DashboardQueries(IDbConnectionFactory connectionFactory) : I
         return rows.ToList();
     }
 
+    public async Task<IReadOnlyList<CategorySpend>> GetParentCategorySpendAsync(
+        Guid userId, DateTime periodStart, DateTime periodEnd, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT
+                COALESCE(p."Id", c."Id") AS "CategoryId",
+                COALESCE(p."Name", c."Name") AS "CategoryName",
+                COALESCE(p."Icon", c."Icon") AS "CategoryIcon",
+                COALESCE(p."Color", c."Color") AS "CategoryColor",
+                SUM(ABS(t."Amount")) AS "Amount"
+            FROM "Transactions" t
+            LEFT JOIN "Categories" c ON c."Id" = t."CategoryId" AND c."DeletedAt" IS NULL
+            LEFT JOIN "Categories" p ON p."Id" = c."ParentCategoryId" AND p."DeletedAt" IS NULL
+            WHERE t."UserId" = @UserId
+              AND t."Date" >= @PeriodStart AND t."Date" <= @PeriodEnd
+              AND t."Type" = @DebitType
+              AND t."IsTransfer" = false
+              AND t."IsHidden" = false
+              AND t."DeletedAt" IS NULL
+            GROUP BY COALESCE(p."Id", c."Id"), COALESCE(p."Name", c."Name"), COALESCE(p."Icon", c."Icon"), COALESCE(p."Color", c."Color")
+            ORDER BY "Amount" DESC;
+            """;
+
+        var parameters = new
+        {
+            UserId = userId,
+            PeriodStart = periodStart,
+            PeriodEnd = periodEnd,
+            DebitType = (int)TransactionType.Debit,
+        };
+
+        using var connection = connectionFactory.CreateConnection();
+        connection.Open();
+
+        var command = new CommandDefinition(sql, parameters, cancellationToken: ct);
+        var rows = await connection.QueryAsync<CategorySpend>(command);
+        return rows.ToList();
+    }
+
     public async Task<IReadOnlyList<MonthlyIncomeExpense>> GetIncomeExpenseByMonthAsync(
         Guid userId, DateTime rangeStart, DateTime rangeEnd, CancellationToken ct)
     {

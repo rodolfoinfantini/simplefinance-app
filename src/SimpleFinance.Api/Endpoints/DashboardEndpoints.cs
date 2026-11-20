@@ -24,6 +24,7 @@ public static class DashboardEndpoints
         var group = app.MapGroup("/api/dashboard").RequireAuthorization();
         group.MapGet("/summary", GetSummaryAsync);
         group.MapGet("/spending-by-category", GetSpendingByCategoryAsync);
+        group.MapGet("/spending-by-parent-category", GetSpendingByParentCategoryAsync);
         group.MapGet("/income-expense", GetIncomeExpenseAsync);
         group.MapGet("/net-worth-evolution", GetNetWorthEvolutionAsync);
         group.MapGet("/at-risk-budgets", GetAtRiskBudgetsAsync);
@@ -71,6 +72,28 @@ public static class DashboardEndpoints
         }
 
         var result = await dashboardService.GetSpendingByCategoryAsync(userId.Value, dateFrom.Value, dateTo.Value, ct);
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> GetSpendingByParentCategoryAsync(
+        DateTime? dateFrom,
+        DateTime? dateTo,
+        DashboardService dashboardService,
+        ClaimsPrincipal principal,
+        CancellationToken ct)
+    {
+        var userId = GetUserId(principal);
+        if (userId is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (dateFrom is null || dateTo is null)
+        {
+            return Results.BadRequest(new { error = "dateFrom and dateTo are required." });
+        }
+
+        var result = await dashboardService.GetSpendingByParentCategoryAsync(userId.Value, dateFrom.Value, dateTo.Value, ct);
         return Results.Ok(result);
     }
 

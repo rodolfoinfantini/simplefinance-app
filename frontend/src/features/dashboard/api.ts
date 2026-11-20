@@ -105,6 +105,18 @@ export function useSpendingByCategoryQuery(accessToken: string, dateFrom?: strin
   })
 }
 
+export function useSpendingByParentCategoryQuery(accessToken: string, dateFrom?: string, dateTo?: string) {
+  return useQuery({
+    queryKey: ['dashboard-spending-by-parent-category', dateFrom, dateTo],
+    queryFn: () =>
+      apiFetch<SpendingByCategoryResponse>(
+        `/api/dashboard/spending-by-parent-category?dateFrom=${dateFrom}&dateTo=${dateTo}`,
+        { accessToken }
+      ),
+    enabled: !!accessToken && !!dateFrom && !!dateTo,
+  })
+}
+
 export function useIncomeExpenseQuery(accessToken: string) {
   return useQuery({
     queryKey: ['dashboard-income-expense'],

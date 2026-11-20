@@ -101,6 +101,29 @@ public sealed class DashboardService(SimpleFinanceDbContext db, DashboardQueries
         return new SpendingByCategoryResult(items, totalAmount);
     }
 
+    /// <summary>Aggregates spending rolled up to parent categories (combining each parent category
+    /// with all of its child subcategories).</summary>
+    public async Task<SpendingByCategoryResult> GetSpendingByParentCategoryAsync(
+        Guid userId, DateTime dateFrom, DateTime dateTo, CancellationToken ct)
+    {
+        var rows = await dashboardQueries.GetParentCategorySpendAsync(userId, dateFrom, dateTo, ct);
+
+        var ordered = rows.OrderByDescending(r => r.Amount).ToList();
+        var totalAmount = ordered.Sum(r => r.Amount);
+
+        var items = ordered
+            .Select(r => new SpendingByCategoryItemResult(
+                r.CategoryId,
+                r.CategoryId is null ? "Uncategorized" : r.CategoryName ?? "Uncategorized",
+                r.CategoryIcon,
+                r.CategoryColor,
+                r.Amount,
+                CalculatePercent(r.Amount, totalAmount)))
+            .ToList();
+
+        return new SpendingByCategoryResult(items, totalAmount);
+    }
+
     /// <summary>DASH-03: computes rangeStart (first day of the month monthsBack-1 months before
     /// the current UTC month) / rangeEnd (last day of the current UTC month), calls
     /// DashboardQueries.GetIncomeExpenseByMonthAsync, then gap-fills every (year, month) in the

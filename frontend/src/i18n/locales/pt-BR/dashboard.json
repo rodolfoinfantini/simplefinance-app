@@ -10,6 +10,10 @@
     "netThisMonth": "Saldo do mês"
   },
   "chart": {
+    "spendingByParentCategory": {
+      "title": "Gastos por categoria pai",
+      "emptyMessage": "Nenhum gasto registrado neste período ainda."
+    },
     "spendingByCategory": {
       "title": "Gastos por categoria",
       "emptyMessage": "Nenhum gasto registrado neste período ainda.",
