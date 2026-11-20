@@ -19,6 +19,7 @@ import {useTranslation} from 'react-i18next'
 
 import { useNotificationContext } from '@/shell/toast/useNotificationContext'
 import { useAuth } from '@/features/auth/useAuth'
+import { useAccountsQuery } from '@/features/accounts/api'
 import { ApiError } from '@/lib/apiClient'
 
 import { Form } from 'react-bootstrap'
@@ -118,6 +119,7 @@ function EmptyState({ onConnect }: { onConnect: () => void }) {
 
 interface ConnectionRowProps {
   connection: ConnectionResponse
+  accountsSummary?: string
   accessToken: string
   onReconnect: (connection: ConnectionResponse) => void
   onViewDetails: (connection: ConnectionResponse) => void
@@ -125,7 +127,15 @@ interface ConnectionRowProps {
   onRename: (connection: ConnectionResponse) => void
 }
 
-function ConnectionRow({ connection, accessToken, onReconnect, onViewDetails, onRemove, onRename }: ConnectionRowProps) {
+function ConnectionRow({
+  connection,
+  accountsSummary,
+  accessToken,
+  onReconnect,
+  onViewDetails,
+  onRemove,
+  onRename,
+}: ConnectionRowProps) {
   const syncMutation = useSyncConnectionMutation()
   const { showNotification } = useNotificationContext()
   const { t } = useTranslation(['connections', 'common'])
@@ -187,6 +197,9 @@ function ConnectionRow({ connection, accessToken, onReconnect, onViewDetails, on
       <CardBody className="d-flex align-items-center justify-content-between gap-3">
         <div className="min-w-0">
           <p className="fw-medium mb-1 text-truncate">{connectionDisplayName(connection, t('fallbackName'))}</p>
+          {accountsSummary && (
+            <p className="text-muted fs-xs mb-1 text-truncate">{accountsSummary}</p>
+          )}
           <p className="text-muted fs-xs mb-0 text-truncate">
             {connection.customName?.trim() && connection.institutionName
               ? `${connection.institutionName} · ${formatLastSync(connection.lastSyncAt, t)}`
@@ -226,6 +239,7 @@ export function ConnectionsPage() {
   const { accessToken } = useAuth()
   const token = accessToken ?? ''
   const connectionsQuery = useConnectionsQuery(token)
+  const accountsQuery = useAccountsQuery(token)
   const registerConnectionMutation = useRegisterConnectionMutation()
   const removeConnectionMutation = useRemoveConnectionMutation()
   const renameConnectionMutation = useRenameConnectionMutation()
@@ -303,6 +317,12 @@ export function ConnectionsPage() {
   }
 
   const connections = connectionsQuery.data ?? []
+  const accountsByConnectionId = new Map<string, string>()
+  for (const acc of accountsQuery.data ?? []) {
+    const label = acc.numberMasked ? `${acc.name} (${acc.numberMasked})` : acc.name
+    const prev = accountsByConnectionId.get(acc.connectionId)
+    accountsByConnectionId.set(acc.connectionId, prev ? `${prev} · ${label}` : label)
+  }
 
   return (
     <>
@@ -344,6 +364,7 @@ export function ConnectionsPage() {
             <ConnectionRow
               key={connection.id}
               connection={connection}
+              accountsSummary={accountsByConnectionId.get(connection.id)}
               accessToken={token}
               onReconnect={(c) => void handleReconnect(c)}
               onViewDetails={setDetailsConnection}

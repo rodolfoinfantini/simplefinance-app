@@ -290,12 +290,15 @@ public sealed class AlertEvaluationJob(
 
         foreach (var c in connections)
         {
+            var connectionLabel = !string.IsNullOrWhiteSpace(c.CustomName)
+                ? c.CustomName
+                : (c.InstitutionName ?? c.ConnectorName ?? "your bank");
             await FireAsync(
                 user,
                 rule,
                 $"{c.Id}:{c.Status}:{DateTime.UtcNow.Date:yyyyMMdd}",
-                $"Connection issue: {c.InstitutionName ?? c.ConnectorName ?? "your bank"}",
-                $"Your connection to {c.InstitutionName ?? c.ConnectorName ?? "your bank"} needs attention ({c.Status}).",
+                $"Connection issue: {connectionLabel}",
+                $"Your connection to {connectionLabel} needs attention ({c.Status}).",
                 ct);
         }
     }

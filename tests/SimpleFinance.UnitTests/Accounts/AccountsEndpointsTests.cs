@@ -270,6 +270,33 @@ public class AccountsEndpointsTests
         Assert.Equal(2820.01m, creditCard.GetProperty("nextStatementBalance").GetDecimal());
     }
 
+    [Fact]
+    public async Task GetAccounts_ConnectionWithCustomName_ReturnsCustomNameAsInstitutionName()
+    {
+        using var factory = new AccountsApiFactory();
+        using var client = factory.CreateClient();
+        var (accessToken, userId) = await SetupAndLoginAsync(client);
+
+        var connection = await SeedConnectionAsync(factory, userId, "MeuPluggy", "item-meupluggy");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SimpleFinanceDbContext>();
+            var tracked = await db.Connections.SingleAsync(c => c.Id == connection.Id);
+            tracked.CustomName = "NuBank";
+            await db.SaveChangesAsync();
+        }
+
+        var account = await SeedAccountAsync(
+            factory, userId, connection.Id, AccountType.Bank, AccountSubtype.CheckingAccount, "Nu Pagamentos S.A.", balance: 13.24m);
+
+        var response = await client.SendAsync(AuthedGet("/api/accounts", accessToken));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var row = body.EnumerateArray().Single(a => a.GetProperty("id").GetString() == account.Id.ToString());
+        Assert.Equal("NuBank", row.GetProperty("institutionName").GetString());
+    }
+
     private static async Task<(string AccessToken, Guid UserId)> SetupAndLoginAsync(HttpClient client)
     {
         await client.PostAsJsonAsync("/api/auth/setup", new { name = "Owner", email = SetupEmail, password = SetupPassword });

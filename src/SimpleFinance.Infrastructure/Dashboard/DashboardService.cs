@@ -225,7 +225,9 @@ public sealed class DashboardService(SimpleFinanceDbContext db, DashboardQueries
         var items = rows
             .Select(x => new UpcomingDueDateItemResult(
                 x.Account.Id,
-                x.Connection == null ? null : x.Connection.InstitutionName,
+                x.Connection == null
+                    ? null
+                    : (!string.IsNullOrWhiteSpace(x.Connection.CustomName) ? x.Connection.CustomName : x.Connection.InstitutionName),
                 x.Account.Name,
                 x.Card.BalanceDueDate!.Value,
                 x.Card.LastStatementBalance ?? x.Account.Balance))

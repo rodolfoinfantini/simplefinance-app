@@ -142,6 +142,8 @@ export function useRenameConnectionMutation() {
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['connections'] })
+      void queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
 }

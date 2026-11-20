@@ -1,4 +1,5 @@
-import { Alert, Button, Card, CardBody, Col, Form, Placeholder, ProgressBar, Row } from 'react-bootstrap'
+import { useState } from 'react'
+import { Alert, Button, Card, CardBody, Col, Form, Modal, Placeholder, ProgressBar, Row } from 'react-bootstrap'
 import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 
@@ -6,6 +7,7 @@ import Icon from '@/components/Icon'
 import { MoneyText } from '@/components/MoneyText'
 import { useNotificationContext } from '@/shell/toast/useNotificationContext'
 import { useAuth } from '@/features/auth/useAuth'
+import { useRenameConnectionMutation } from '@/features/connections/api'
 
 import { useAccountsQuery, useToggleAccountHideMutation, type AccountResponse } from './api'
 
@@ -41,10 +43,26 @@ function TileSkeleton() {
   )
 }
 
-function AccountTile({ account, accessToken }: { account: AccountResponse; accessToken: string }) {
+function formatAccountSubtitle(account: AccountResponse, title: string): string {
+  if (account.numberMasked && account.name && account.name !== title) {
+    return `${account.name} · ${account.numberMasked}`
+  }
+  return account.numberMasked ?? account.name
+}
+
+function AccountTile({
+  account,
+  accessToken,
+  onRename,
+}: {
+  account: AccountResponse
+  accessToken: string
+  onRename: (account: AccountResponse) => void
+}) {
   const toggleHideMutation = useToggleAccountHideMutation()
   const { showNotification } = useNotificationContext()
-  const { t } = useTranslation('accounts')
+  const { t } = useTranslation(['accounts', 'common'])
+  const title = account.institutionName ?? account.name
 
   async function handleHideToggle(checked: boolean) {
     try {
@@ -64,8 +82,19 @@ function AccountTile({ account, accessToken }: { account: AccountResponse; acces
         <CardBody>
           <div className="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
             <div>
-              <p className="fw-semibold mb-1">{account.institutionName ?? account.name}</p>
-              <p className="text-muted mb-0">{account.numberMasked ?? account.name}</p>
+              <div className="d-flex align-items-center gap-1 mb-1">
+                <p className="fw-semibold mb-0">{title}</p>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="text-muted p-0 ms-1"
+                  onClick={() => onRename(account)}
+                  aria-label={t('common:actions.rename')}
+                >
+                  <Icon icon="pencil" />
+                </Button>
+              </div>
+              <p className="text-muted mb-0">{formatAccountSubtitle(account, title)}</p>
             </div>
             <div className="d-flex flex-column align-items-end gap-1">
               <Form.Check
@@ -91,9 +120,16 @@ function AccountTile({ account, accessToken }: { account: AccountResponse; acces
   )
 }
 
-function CreditCardTile({ account }: { account: AccountResponse }) {
-  const { t } = useTranslation('accounts')
+function CreditCardTile({
+  account,
+  onRename,
+}: {
+  account: AccountResponse
+  onRename: (account: AccountResponse) => void
+}) {
+  const { t } = useTranslation(['accounts', 'common'])
   const creditCard = account.creditCard
+  const title = account.institutionName ?? account.name
 
   if (!creditCard) return null
 
@@ -111,8 +147,19 @@ function CreditCardTile({ account }: { account: AccountResponse }) {
       <Card className="h-100">
         <CardBody>
           <div className="mb-3">
-            <p className="fw-semibold mb-1">{account.institutionName ?? account.name}</p>
-            <p className="text-muted mb-0">{account.numberMasked ?? account.name}</p>
+            <div className="d-flex align-items-center gap-1 mb-1">
+              <p className="fw-semibold mb-0">{title}</p>
+              <Button
+                variant="link"
+                size="sm"
+                className="text-muted p-0 ms-1"
+                onClick={() => onRename(account)}
+                aria-label={t('common:actions.rename')}
+              >
+                <Icon icon="pencil" />
+              </Button>
+            </div>
+            <p className="text-muted mb-0">{formatAccountSubtitle(account, title)}</p>
           </div>
 
           <div className="mb-3">
@@ -194,9 +241,38 @@ function EmptyState() {
  * names accounts, not cards, matching v1's CreditCardTile).
  */
 export function AccountsPage() {
-  const { t } = useTranslation(['accounts', 'common'])
+  const { t } = useTranslation(['accounts', 'common', 'connections'])
   const { accessToken } = useAuth()
-  const accountsQuery = useAccountsQuery(accessToken ?? '')
+  const token = accessToken ?? ''
+  const accountsQuery = useAccountsQuery(token)
+  const renameConnectionMutation = useRenameConnectionMutation()
+  const { showNotification } = useNotificationContext()
+  const [renameAccount, setRenameAccount] = useState<AccountResponse | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+
+  function openRename(account: AccountResponse) {
+    const current = account.institutionName && account.institutionName !== 'MeuPluggy'
+      ? account.institutionName
+      : ''
+    setRenameValue(current)
+    setRenameAccount(account)
+  }
+
+  async function handleRename() {
+    if (!renameAccount) return
+    try {
+      await renameConnectionMutation.mutateAsync({
+        accessToken: token,
+        id: renameAccount.connectionId,
+        customName: renameValue,
+      })
+      showNotification({ message: t('connections:rename.success'), variant: 'success' })
+    } catch {
+      showNotification({ message: t('connections:rename.error'), variant: 'danger' })
+    } finally {
+      setRenameAccount(null)
+    }
+  }
 
   const accounts = accountsQuery.data ?? []
   const bankAccounts = accounts.filter((account) => account.type === 'Bank')
@@ -233,7 +309,12 @@ export function AccountsPage() {
               <h4 className="mb-3">{t('sections.bankAccounts')}</h4>
               <Row className="row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
                 {bankAccounts.map((account) => (
-                  <AccountTile key={account.id} account={account} accessToken={accessToken ?? ''} />
+                  <AccountTile
+                    key={account.id}
+                    account={account}
+                    accessToken={token}
+                    onRename={openRename}
+                  />
                 ))}
               </Row>
             </section>
@@ -244,13 +325,48 @@ export function AccountsPage() {
               <h4 className="mb-3">{t('sections.creditCards')}</h4>
               <Row className="row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
                 {creditCards.map((account) => (
-                  <CreditCardTile key={account.id} account={account} />
+                  <CreditCardTile key={account.id} account={account} onRename={openRename} />
                 ))}
               </Row>
             </section>
           )}
         </>
       )}
+
+      <Modal show={!!renameAccount} onHide={() => setRenameAccount(null)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>{t('connections:rename.title')}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form.Group>
+            <Form.Label>{t('connections:rename.nickname')}</Form.Label>
+            <Form.Control
+              type="text"
+              maxLength={100}
+              value={renameValue}
+              placeholder={renameAccount?.name ?? t('connections:rename.placeholder')}
+              autoFocus
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleRename()
+              }}
+            />
+            <Form.Text className="text-muted">{t('connections:rename.helper')}</Form.Text>
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="light" onClick={() => setRenameAccount(null)}>
+            {t('common:actions.cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => void handleRename()}
+            disabled={renameConnectionMutation.isPending}
+          >
+            {t('common:actions.save')}
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </>
   )
 }

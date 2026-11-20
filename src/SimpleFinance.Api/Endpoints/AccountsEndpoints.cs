@@ -133,7 +133,9 @@ public static class AccountsEndpoints
             .Select(r => ToResponse(
                 r.Account,
                 r.Card,
-                r.Connection?.InstitutionName,
+                !string.IsNullOrWhiteSpace(r.Connection?.CustomName)
+                    ? r.Connection.CustomName
+                    : r.Connection?.InstitutionName,
                 nextStatementByAccountId.GetValueOrDefault(r.Account.Id)))
             .ToList();
     }
