@@ -19,6 +19,7 @@ export interface TransactionFilters {
   amountMin?: number
   amountMax?: number
   search?: string
+  excludeTransfers?: boolean
 }
 
 /**
@@ -40,6 +41,7 @@ export function buildTransactionsQueryString(filters: TransactionFilters, page: 
   if (filters.amountMin !== undefined) params.set('amountMin', String(filters.amountMin))
   if (filters.amountMax !== undefined) params.set('amountMax', String(filters.amountMax))
   if (filters.search) params.set('search', filters.search)
+  if (filters.excludeTransfers) params.set('excludeTransfers', 'true')
 
   return params.toString()
 }
@@ -59,7 +61,8 @@ export function isFilterActive(filters: TransactionFilters): boolean {
     !!filters.status ||
     filters.amountMin !== undefined ||
     filters.amountMax !== undefined ||
-    !!filters.search
+    !!filters.search ||
+    !!filters.excludeTransfers
   )
 }
 
@@ -75,5 +78,6 @@ export function activeFilterCount(filters: TransactionFilters): number {
     filters.amountMin !== undefined,
     filters.amountMax !== undefined,
     filters.search,
+    filters.excludeTransfers,
   ].filter(Boolean).length
 }

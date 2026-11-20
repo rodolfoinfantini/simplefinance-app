@@ -126,6 +126,30 @@ public class TransactionsEndpointsTests
     }
 
     [Fact]
+    public async Task GetTransactions_ExcludeTransfersTrue_FiltersOutTransferRows()
+    {
+        using var factory = new TransactionsApiFactory();
+        using var client = factory.CreateClient();
+        var (accessToken, userId) = await SetupAndLoginAsync(client);
+
+        var (_, account) = await SeedConnectionAndAccountAsync(factory, userId, "Bank Co");
+        var income = await SeedTransactionAsync(
+            factory, userId, account.Id, date: DateTime.UtcNow, amount: 100m, description: "Salary", type: TransactionType.Credit);
+        var expense = await SeedTransactionAsync(
+            factory, userId, account.Id, date: DateTime.UtcNow, amount: -40m, description: "Coffee", type: TransactionType.Debit);
+        await SeedTransactionAsync(
+            factory, userId, account.Id, date: DateTime.UtcNow, amount: -500m, description: "Dinheiro reservado", type: TransactionType.Debit, isTransfer: true);
+
+        var response = await client.SendAsync(AuthedGet("/api/transactions?excludeTransfers=true", accessToken));
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(2, body.GetProperty("totalCount").GetInt32());
+        var ids = body.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetString()).ToList();
+        Assert.Contains(income.Id.ToString(), ids);
+        Assert.Contains(expense.Id.ToString(), ids);
+    }
+
+    [Fact]
     public async Task GetTransactions_TypeIncome_ExcludesTransfersEvenWhenCredit()
     {
         using var factory = new TransactionsApiFactory();

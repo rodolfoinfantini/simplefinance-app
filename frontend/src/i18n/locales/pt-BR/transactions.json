@@ -22,6 +22,7 @@
     "amountAny": "Qualquer valor",
     "apply": "Aplicar",
     "searchPlaceholder": "Buscar por descrição ou estabelecimento",
+    "hideTransfers": "Ocultar transferências internas",
     "clearFilters": "Limpar filtros"
   },
   "export": {

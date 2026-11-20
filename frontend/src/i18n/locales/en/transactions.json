@@ -22,6 +22,7 @@
     "amountAny": "Any amount",
     "apply": "Apply",
     "searchPlaceholder": "Search by description or merchant",
+    "hideTransfers": "Hide internal transfers",
     "clearFilters": "Clear filters"
   },
   "export": {

@@ -51,6 +51,7 @@ public static class TransactionsEndpoints
         decimal? amountMin,
         decimal? amountMax,
         string? search,
+        bool? excludeTransfers,
         SimpleFinanceDbContext db,
         ClaimsPrincipal principal,
         CancellationToken ct)
@@ -102,6 +103,11 @@ public static class TransactionsEndpoints
                 "transfer" => query.Where(t => t.IsTransfer),
                 _ => query,
             };
+        }
+
+        if (excludeTransfers == true)
+        {
+            query = query.Where(t => !t.IsTransfer);
         }
 
         if (status is not null)

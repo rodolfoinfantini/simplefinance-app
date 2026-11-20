@@ -84,6 +84,7 @@ function filtersFromSearchParams(searchParams: URLSearchParams): TransactionFilt
   if (categoryId) filters.categoryId = categoryId
   if (type === 'income' || type === 'expense' || type === 'transfer') filters.type = type
   if (status === 'posted' || status === 'pending') filters.status = status
+  if (searchParams.get('excludeTransfers') === 'true') filters.excludeTransfers = true
 
   return filters
 }
@@ -219,12 +220,14 @@ function FilterBar({ filters, onChange, accounts, categories }: FilterBarProps) 
         <Form.Label className="fs-xs text-muted mb-1">{t('filters.type')}</Form.Label>
         <Form.Select
           value={filters.type ?? ''}
-          onChange={(event) =>
+          onChange={(event) => {
+            const nextType = (event.target.value || undefined) as TransactionFilters['type']
             onChange({
               ...filters,
-              type: (event.target.value || undefined) as TransactionFilters['type'],
+              type: nextType,
+              excludeTransfers: nextType === 'transfer' ? undefined : filters.excludeTransfers,
             })
-          }
+          }}
         >
           <option value="">{t('filters.typeAll')}</option>
           <option value="income">{t('filters.typeIncome')}</option>
@@ -522,7 +525,7 @@ export function TransactionsPage() {
             </Col>
           </Row>
           <Row className="g-2 align-items-center justify-content-between">
-            <Col xs={12} sm="auto">
+            <Col xs={12} sm="auto" className="d-flex flex-wrap align-items-center gap-3">
               <div className="position-relative" style={{ maxWidth: 320 }}>
                 <Icon
                   icon="search"
@@ -536,6 +539,19 @@ export function TransactionsPage() {
                   style={{ paddingLeft: 36 }}
                 />
               </div>
+              <Form.Check
+                type="switch"
+                id="txn-hide-transfers-switch"
+                label={t('filters.hideTransfers')}
+                checked={!!filters.excludeTransfers}
+                onChange={(event) =>
+                  updateFilters({
+                    ...filters,
+                    excludeTransfers: event.target.checked || undefined,
+                    type: event.target.checked && filters.type === 'transfer' ? undefined : filters.type,
+                  })
+                }
+              />
             </Col>
             <Col xs="auto" className="d-flex align-items-center gap-2">
               {filtersActive && (
