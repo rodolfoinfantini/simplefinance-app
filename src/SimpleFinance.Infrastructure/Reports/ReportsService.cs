@@ -14,6 +14,9 @@ namespace SimpleFinance.Infrastructure.Reports;
 public sealed record BudgetRealizedRow(
     Guid CategoryId, string CategoryName, decimal PlannedAmount, decimal RealizedAmount, decimal Variance);
 
+public sealed record WeekdaySpendItem(
+    int DayOfWeek, decimal TotalAmount, int TransactionCount, decimal AverageAmount);
+
 /// <summary>
 /// RPT-01/RPT-03: assembles all 7 reports (spending-by-category, income-vs-expense, cash flow by
 /// account, net-worth evolution, card statements by month, recurring/subscriptions, budget
@@ -90,6 +93,38 @@ public sealed class ReportsService(
             .ToDictionaryAsync(c => c.Id, ct);
 
         return budgets.Select(b => ComputeRow(b, spendRows, categoriesById)).ToList();
+    }
+
+    private static readonly int[] MondayToSundayOrder = [1, 2, 3, 4, 5, 6, 0];
+
+    /// <summary>Returns spending grouped by day of week ordered Monday (1) through Sunday (0),
+    /// gap-filling any weekday with zero transactions.</summary>
+    public async Task<IReadOnlyList<WeekdaySpendItem>> GetSpendingByWeekdayAsync(
+        Guid userId, DateTime periodStart, DateTime periodEnd, bool excludeInstallments, CancellationToken ct)
+    {
+        var startUtc = periodStart.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(periodStart, DateTimeKind.Utc)
+            : periodStart.ToUniversalTime();
+        var endUtc = periodEnd.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(periodEnd, DateTimeKind.Utc)
+            : periodEnd.ToUniversalTime();
+        if (endUtc.TimeOfDay == TimeSpan.Zero)
+        {
+            endUtc = endUtc.Date.AddDays(1).AddTicks(-1);
+        }
+
+        var rows = await reportQueries.GetSpendingByWeekdayAsync(userId, startUtc, endUtc, excludeInstallments, ct);
+        var byDow = rows.ToDictionary(r => r.DayOfWeek);
+
+        return MondayToSundayOrder
+            .Select(dow => byDow.TryGetValue(dow, out var row) && row.TransactionCount > 0
+                ? new WeekdaySpendItem(
+                    dow,
+                    row.TotalAmount,
+                    row.TransactionCount,
+                    Math.Round(row.TotalAmount / row.TransactionCount, 2))
+                : new WeekdaySpendItem(dow, 0m, 0, 0m))
+            .ToList();
     }
 
     private static BudgetRealizedRow ComputeRow(

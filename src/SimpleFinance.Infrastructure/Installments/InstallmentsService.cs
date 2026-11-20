@@ -26,11 +26,18 @@ public sealed record InstallmentPlanItem(
     DateTime NextInstallmentDate,
     DateTime LastInstallmentDate);
 
+public sealed record InstallmentMonthProjection(
+    int Year,
+    int Month,
+    decimal Amount,
+    int Count);
+
 public sealed record InstallmentsSummaryResponse(
     decimal TotalRemainingAmount,
     decimal MonthlyTotal,
     int ActiveCount,
-    IReadOnlyList<InstallmentPlanItem> Items);
+    IReadOnlyList<InstallmentPlanItem> Items,
+    IReadOnlyList<InstallmentMonthProjection> MonthlyProjection);
 
 public sealed partial class InstallmentsService(SimpleFinanceDbContext db)
 {
@@ -68,7 +75,7 @@ public sealed partial class InstallmentsService(SimpleFinanceDbContext db)
 
         if (accounts.Count == 0)
         {
-            return new InstallmentsSummaryResponse(0m, 0m, 0, []);
+            return new InstallmentsSummaryResponse(0m, 0m, 0, [], []);
         }
 
         var accountById = accounts.ToDictionary(a => a.Id);
@@ -104,11 +111,12 @@ public sealed partial class InstallmentsService(SimpleFinanceDbContext db)
 
         if (rows.Count == 0)
         {
-            return new InstallmentsSummaryResponse(0m, 0m, 0, []);
+            return new InstallmentsSummaryResponse(0m, 0m, 0, [], []);
         }
 
         var plans = GroupIntoPlans(rows);
         var activeItems = new List<InstallmentPlanItem>();
+        var monthlyProjectionMap = new Dictionary<(int Year, int Month), (decimal Amount, int Count)>();
         var fallbackUnpaidCutoff = DateTime.UtcNow.Date.AddDays(-35);
 
         foreach (var plan in plans)
@@ -152,6 +160,24 @@ public sealed partial class InstallmentsService(SimpleFinanceDbContext db)
             if (unpaidDbRows.Count == 0 && projectedFutureInstallments.Count == 0)
             {
                 continue;
+            }
+
+            foreach (var r in unpaidDbRows)
+            {
+                var local = r.Date.AddHours(-3);
+                var key = (local.Year, local.Month);
+                monthlyProjectionMap[key] = monthlyProjectionMap.TryGetValue(key, out var cur)
+                    ? (cur.Amount + r.Amount, cur.Count + 1)
+                    : (r.Amount, 1);
+            }
+
+            foreach (var p in projectedFutureInstallments)
+            {
+                var local = p.Date.AddHours(-3);
+                var key = (local.Year, local.Month);
+                monthlyProjectionMap[key] = monthlyProjectionMap.TryGetValue(key, out var cur)
+                    ? (cur.Amount + p.Amount, cur.Count + 1)
+                    : (p.Amount, 1);
             }
 
             var firstUnpaidNumber = unpaidDbRows.Count > 0
@@ -221,12 +247,19 @@ public sealed partial class InstallmentsService(SimpleFinanceDbContext db)
 
         var totalRemaining = sortedItems.Sum(i => i.RemainingAmount);
         var monthlyTotal = sortedItems.Sum(i => i.InstallmentAmount);
+        var monthlyProjection = monthlyProjectionMap
+            .OrderBy(kv => kv.Key.Year)
+            .ThenBy(kv => kv.Key.Month)
+            .Take(12)
+            .Select(kv => new InstallmentMonthProjection(kv.Key.Year, kv.Key.Month, kv.Value.Amount, kv.Value.Count))
+            .ToList();
 
         return new InstallmentsSummaryResponse(
             TotalRemainingAmount: totalRemaining,
             MonthlyTotal: monthlyTotal,
             ActiveCount: sortedItems.Count,
-            Items: sortedItems);
+            Items: sortedItems,
+            MonthlyProjection: monthlyProjection);
     }
 
     private static List<InstallmentPlanGroup> GroupIntoPlans(List<CandidateRow> rows)

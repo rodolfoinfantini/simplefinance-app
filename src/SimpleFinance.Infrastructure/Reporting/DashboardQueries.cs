@@ -12,6 +12,11 @@ public sealed record CategorySpend(
 
 public sealed record MonthlyIncomeExpense(int Year, int Month, decimal Income, decimal Expense);
 
+public sealed record DailyExpenseRow(int Year, int Month, int Day, decimal Expense);
+
+public sealed record MonthlyParentCategorySpendRow(
+    int Year, int Month, Guid? CategoryId, string? CategoryName, string? CategoryColor, decimal Amount);
+
 public sealed record NetWorthPoint(DateTime Date, decimal NetWorth);
 
 public sealed record NetWorthComposition(
@@ -213,6 +218,82 @@ public sealed class DashboardQueries(IDbConnectionFactory connectionFactory) : I
 
         var command = new CommandDefinition(sql, parameters, cancellationToken: ct);
         var rows = await connection.QueryAsync<MonthlyIncomeExpense>(command);
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<DailyExpenseRow>> GetDailyExpenseAsync(
+        Guid userId, DateTime rangeStart, DateTime rangeEnd, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT
+                EXTRACT(YEAR FROM (t."Date" AT TIME ZONE 'America/Sao_Paulo'))::int AS "Year",
+                EXTRACT(MONTH FROM (t."Date" AT TIME ZONE 'America/Sao_Paulo'))::int AS "Month",
+                EXTRACT(DAY FROM (t."Date" AT TIME ZONE 'America/Sao_Paulo'))::int AS "Day",
+                SUM(ABS(t."Amount")) AS "Expense"
+            FROM "Transactions" t
+            WHERE t."UserId" = @UserId
+              AND t."Date" >= @RangeStart AND t."Date" <= @RangeEnd
+              AND t."Type" = @DebitType
+              AND t."IsTransfer" = false
+              AND t."IsHidden" = false
+              AND t."DeletedAt" IS NULL
+            GROUP BY 1, 2, 3
+            ORDER BY 1, 2, 3;
+            """;
+
+        var parameters = new
+        {
+            UserId = userId,
+            RangeStart = rangeStart,
+            RangeEnd = rangeEnd,
+            DebitType = (int)TransactionType.Debit,
+        };
+
+        using var connection = connectionFactory.CreateConnection();
+        connection.Open();
+
+        var command = new CommandDefinition(sql, parameters, cancellationToken: ct);
+        var rows = await connection.QueryAsync<DailyExpenseRow>(command);
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<MonthlyParentCategorySpendRow>> GetMonthlyParentCategorySpendAsync(
+        Guid userId, DateTime rangeStart, DateTime rangeEnd, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT
+                EXTRACT(YEAR FROM (t."Date" AT TIME ZONE 'America/Sao_Paulo'))::int AS "Year",
+                EXTRACT(MONTH FROM (t."Date" AT TIME ZONE 'America/Sao_Paulo'))::int AS "Month",
+                COALESCE(p."Id", c."Id") AS "CategoryId",
+                COALESCE(p."Name", c."Name") AS "CategoryName",
+                COALESCE(p."Color", c."Color") AS "CategoryColor",
+                SUM(ABS(t."Amount")) AS "Amount"
+            FROM "Transactions" t
+            LEFT JOIN "Categories" c ON c."Id" = t."CategoryId" AND c."DeletedAt" IS NULL
+            LEFT JOIN "Categories" p ON p."Id" = c."ParentCategoryId" AND p."DeletedAt" IS NULL
+            WHERE t."UserId" = @UserId
+              AND t."Date" >= @RangeStart AND t."Date" <= @RangeEnd
+              AND t."Type" = @DebitType
+              AND t."IsTransfer" = false
+              AND t."IsHidden" = false
+              AND t."DeletedAt" IS NULL
+            GROUP BY 1, 2, 3, 4, 5
+            ORDER BY 1, 2, "Amount" DESC;
+            """;
+
+        var parameters = new
+        {
+            UserId = userId,
+            RangeStart = rangeStart,
+            RangeEnd = rangeEnd,
+            DebitType = (int)TransactionType.Debit,
+        };
+
+        using var connection = connectionFactory.CreateConnection();
+        connection.Open();
+
+        var command = new CommandDefinition(sql, parameters, cancellationToken: ct);
+        var rows = await connection.QueryAsync<MonthlyParentCategorySpendRow>(command);
         return rows.ToList();
     }
 

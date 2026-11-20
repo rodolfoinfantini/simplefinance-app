@@ -26,6 +26,8 @@ public class DashboardEndpointsTests
     [InlineData("/api/dashboard/summary")]
     [InlineData("/api/dashboard/spending-by-category")]
     [InlineData("/api/dashboard/spending-by-parent-category")]
+    [InlineData("/api/dashboard/spending-pace")]
+    [InlineData("/api/dashboard/parent-category-trend")]
     [InlineData("/api/dashboard/income-expense")]
     [InlineData("/api/dashboard/net-worth-evolution")]
     [InlineData("/api/dashboard/at-risk-budgets")]
@@ -87,6 +89,18 @@ public class DashboardEndpointsTests
 
         var response = await client.SendAsync(
             AuthedGet($"/api/dashboard/spending-by-parent-category?dateTo={Uri.EscapeDataString("2026-07-31")}", accessToken));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetParentCategoryTrend_InvalidMonthsValue_Returns400()
+    {
+        using var factory = new DashboardApiFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await SetupAndLoginAsync(client);
+
+        var response = await client.SendAsync(AuthedGet("/api/dashboard/parent-category-trend?months=3", accessToken));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

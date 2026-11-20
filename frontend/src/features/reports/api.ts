@@ -59,9 +59,16 @@ export interface BudgetRealizedItem {
   variance: number
 }
 
+export interface WeekdaySpendItem {
+  dayOfWeek: number
+  totalAmount: number
+  transactionCount: number
+  averageAmount: number
+}
+
 export type NetWorthEvolutionDays = 30 | 90 | 365
 
-function buildQuery(params: Record<string, string | number | undefined>): string {
+function buildQuery(params: Record<string, string | number | boolean | undefined>): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined) search.set(key, String(value))
@@ -144,5 +151,22 @@ export function useBudgetRealizedVsPlannedQuery(accessToken: string, year?: numb
         { accessToken }
       ),
     enabled: !!accessToken && !!year && !!month,
+  })
+}
+
+export function useSpendingByWeekdayReportQuery(
+  accessToken: string,
+  dateFrom?: string,
+  dateTo?: string,
+  excludeInstallments = true
+) {
+  return useQuery({
+    queryKey: ['reports-spending-by-weekday', dateFrom, dateTo, excludeInstallments],
+    queryFn: () =>
+      apiFetch<WeekdaySpendItem[]>(
+        `/api/reports/spending-by-weekday${buildQuery({ dateFrom, dateTo, excludeInstallments })}`,
+        { accessToken }
+      ),
+    enabled: !!accessToken && !!dateFrom && !!dateTo,
   })
 }

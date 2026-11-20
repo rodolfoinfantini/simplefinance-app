@@ -20,6 +20,32 @@
       "uncategorized": "Uncategorized",
       "others": "Others"
     },
+    "spendingPace": {
+      "title": "Monthly spending pace",
+      "emptyMessage": "No spending recorded to compare this month's pace yet.",
+      "currentMonth": "Current month",
+      "previousMonth": "Last month",
+      "threeMonthAverage": "3-month average",
+      "dayPrefix": "Day",
+      "vsAverageBadge": "Day {{day}}: {{percent}} vs. avg"
+    },
+    "installmentProjection": {
+      "title": "Monthly installment projection",
+      "viewAll": "View all installments",
+      "emptyMessage": "No unpaid future installments.",
+      "seriesLabel": "Committed installments",
+      "installmentsWord": "installments"
+    },
+    "parentCategoryTrend": {
+      "title": "Parent category trend",
+      "emptyMessage": "No categorized spending recorded for this period."
+    },
+    "savingsRate": {
+      "title": "Net balance & savings rate",
+      "emptyMessage": "No income or expenses recorded yet.",
+      "netLabel": "Net balance",
+      "rateLabel": "Savings rate"
+    },
     "netWorthOverTime": {
       "title": "Net worth over time",
       "valueLabel": "Net worth",

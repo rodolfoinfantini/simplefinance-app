@@ -167,6 +167,15 @@ public class InstallmentsEndpointsTests
         Assert.Equal(1094.59m, item.GetProperty("remainingAmount").GetDecimal());
         Assert.Equal(new DateTime(2026, 7, 30, 20, 0, 0, DateTimeKind.Utc), item.GetProperty("purchaseDate").GetDateTime());
         Assert.Equal(new DateTime(2027, 5, 10, 3, 0, 0, DateTimeKind.Utc), item.GetProperty("lastInstallmentDate").GetDateTime());
+
+        var projection = body.GetProperty("monthlyProjection").EnumerateArray().ToList();
+        Assert.Equal(7, projection.Count);
+        Assert.Equal(2026, projection[0].GetProperty("year").GetInt32());
+        Assert.Equal(11, projection[0].GetProperty("month").GetInt32());
+        Assert.Equal(156.37m, projection[0].GetProperty("amount").GetDecimal());
+        Assert.Equal(1, projection[0].GetProperty("count").GetInt32());
+        Assert.Equal(2027, projection[^1].GetProperty("year").GetInt32());
+        Assert.Equal(5, projection[^1].GetProperty("month").GetInt32());
     }
 
     private static async Task<(string AccessToken, Guid UserId)> SetupAndLoginAsync(HttpClient client)

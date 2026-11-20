@@ -21,6 +21,7 @@ import { CategoryBarChart } from '@/components/charts/CategoryBarChart'
 import { ChartCard } from '@/components/charts/ChartCard'
 import { EvolutionLineChart } from '@/components/charts/EvolutionLineChart'
 import { IncomeExpenseBarChart } from '@/components/charts/IncomeExpenseBarChart'
+import { WeekdaySpendingChart } from '@/components/charts/WeekdaySpendingChart'
 import { MoneyText } from '@/components/MoneyText'
 import { useNotificationContext } from '@/shell/toast/useNotificationContext'
 import { useAuth } from '@/features/auth/useAuth'
@@ -37,6 +38,7 @@ import {
   useNetWorthEvolutionReportQuery,
   useRecurringReportQuery,
   useSpendingByCategoryReportQuery,
+  useSpendingByWeekdayReportQuery,
   type NetWorthEvolutionDays,
 } from './api'
 
@@ -193,6 +195,7 @@ export function ReportsPage() {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
+  const [excludeInstallments, setExcludeInstallments] = useState(true)
 
   const spendingQuery = useSpendingByCategoryReportQuery(token, period.dateFrom, period.dateTo)
   const incomeExpenseQuery = useIncomeExpenseReportQuery(token, period.dateFrom, period.dateTo)
@@ -201,6 +204,7 @@ export function ReportsPage() {
   const cardStatementsQuery = useCardStatementsQuery(token, period.dateFrom, period.dateTo)
   const recurringQuery = useRecurringReportQuery(token)
   const budgetQuery = useBudgetRealizedVsPlannedQuery(token, year, month)
+  const weekdayQuery = useSpendingByWeekdayReportQuery(token, period.dateFrom, period.dateTo, excludeInstallments)
 
   const spendingItems: CategoryBarChartItem[] = useMemo(() => {
     const rawItems = spendingQuery.data ?? []
@@ -220,6 +224,25 @@ export function ReportsPage() {
   const cardStatementItems = cardStatementsQuery.data ?? []
   const recurringItems = recurringQuery.data?.items ?? []
   const budgetItems = budgetQuery.data ?? []
+  const weekdayItems = useMemo(() => {
+    const labelsByDow: Record<number, string> = {
+      0: t('weekdayChart.days.sun'),
+      1: t('weekdayChart.days.mon'),
+      2: t('weekdayChart.days.tue'),
+      3: t('weekdayChart.days.wed'),
+      4: t('weekdayChart.days.thu'),
+      5: t('weekdayChart.days.fri'),
+      6: t('weekdayChart.days.sat'),
+    }
+    return (weekdayQuery.data ?? []).map((item) => ({
+      dayOfWeek: item.dayOfWeek,
+      label: labelsByDow[item.dayOfWeek] ?? String(item.dayOfWeek),
+      totalAmount: item.totalAmount,
+      transactionCount: item.transactionCount,
+      averageAmount: item.averageAmount,
+    }))
+  }, [weekdayQuery.data, t])
+  const hasWeekdaySpending = weekdayItems.some((item) => item.totalAmount > 0)
 
   return (
     <div>
@@ -531,6 +554,40 @@ export function ReportsPage() {
                 </tbody>
               </Table>
             </div>
+          </ChartCard>
+        </Tab>
+
+        <Tab eventKey="weekday" title={t('tabs.byWeekday')}>
+          <ChartCard
+            title={t('weekdayChart.title')}
+            action={
+              <div className="d-flex flex-wrap align-items-center gap-3">
+                <Form.Check
+                  type="switch"
+                  id="reports-weekday-exclude-installments"
+                  label={t('weekdayChart.excludeInstallments')}
+                  checked={excludeInstallments}
+                  onChange={(event) => setExcludeInstallments(event.target.checked)}
+                />
+                <ExportButtons
+                  path={`/api/export/reports/spending-by-weekday?dateFrom=${period.dateFrom}&dateTo=${period.dateTo}&excludeInstallments=${excludeInstallments}`}
+                  filenameBase={`spending-by-weekday-${period.dateFrom}-${period.dateTo}`}
+                  accessToken={token}
+                />
+              </div>
+            }
+            isLoading={weekdayQuery.isPending}
+            isError={weekdayQuery.isError}
+            onRetry={() => void weekdayQuery.refetch()}
+            isEmpty={!weekdayQuery.isPending && !hasWeekdaySpending}
+            emptyMessage={t('weekdayChart.empty')}
+          >
+            <WeekdaySpendingChart
+              items={weekdayItems}
+              seriesLabel={t('weekdayChart.seriesLabel')}
+              transactionsWord={t('weekdayChart.transactionsWord')}
+              averageLabel={t('weekdayChart.averageLabel')}
+            />
           </ChartCard>
         </Tab>
       </Tabs>

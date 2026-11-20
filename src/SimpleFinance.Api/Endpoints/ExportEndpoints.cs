@@ -27,6 +27,7 @@ public static class ExportEndpoints
         "card-statements",
         "recurring",
         "budget-realized-vs-planned",
+        "spending-by-weekday",
     ];
 
     public static void MapExportEndpoints(this IEndpointRouteBuilder app)
@@ -79,6 +80,7 @@ public static class ExportEndpoints
         int? days,
         int? year,
         int? month,
+        bool? excludeInstallments,
         ExportService exportService,
         ReportsService reportsService,
         ClaimsPrincipal principal,
@@ -100,7 +102,7 @@ public static class ExportEndpoints
             return Results.BadRequest(new { error = "format must be csv or xlsx." });
         }
 
-        var query = new ReportExportQuery(dateFrom, dateTo, days, year, month);
+        var query = new ReportExportQuery(dateFrom, dateTo, days, year, month, excludeInstallments);
 
         ExportTable table;
         try

@@ -1,7 +1,7 @@
 {
   "title": "Relatórios",
   "period": {
-    "label": "Período (aplica-se a Por categoria, Receita vs despesa, Fluxo de caixa e Faturas do cartão)",
+    "label": "Período (aplica-se a Por categoria, Receita vs despesa, Fluxo de caixa, Faturas do cartão e Por dia da semana)",
     "from": "De",
     "to": "Até"
   },
@@ -12,7 +12,8 @@
     "cashFlow": "Fluxo de caixa",
     "cardStatements": "Faturas do cartão",
     "recurring": "Recorrentes",
-    "budget": "Orçamento"
+    "budget": "Orçamento",
+    "byWeekday": "Por dia da semana"
   },
   "export": {
     "csv": "Exportar CSV",
@@ -80,6 +81,23 @@
       "planned": "Planejado",
       "realized": "Realizado",
       "variance": "Variação"
+    }
+  },
+  "weekdayChart": {
+    "title": "Gastos por dia da semana",
+    "empty": "Nenhum gasto registrado neste período.",
+    "excludeInstallments": "Excluir parcelas",
+    "seriesLabel": "Gastos",
+    "transactionsWord": "transações",
+    "averageLabel": "Média",
+    "days": {
+      "mon": "Seg",
+      "tue": "Ter",
+      "wed": "Qua",
+      "thu": "Qui",
+      "fri": "Sex",
+      "sat": "Sáb",
+      "sun": "Dom"
     }
   },
   "months": {

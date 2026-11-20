@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 
+import type { InstallmentMonthProjection } from '@/components/charts/InstallmentProjectionChart'
 import { apiFetch } from '@/lib/apiClient'
+
+export type { InstallmentMonthProjection }
 
 export interface InstallmentPlanItem {
   id: string
@@ -29,6 +32,7 @@ export interface InstallmentsSummaryResponse {
   monthlyTotal: number
   activeCount: number
   items: InstallmentPlanItem[]
+  monthlyProjection: InstallmentMonthProjection[]
 }
 
 export function useInstallmentsQuery(accessToken: string, accountId?: string) {

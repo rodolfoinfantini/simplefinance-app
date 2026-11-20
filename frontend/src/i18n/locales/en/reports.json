@@ -1,7 +1,7 @@
 {
   "title": "Reports",
   "period": {
-    "label": "Period (applies to By category, Income vs expense, Cash flow, and Card statements)",
+    "label": "Period (applies to By category, Income vs expense, Cash flow, Card statements, and By weekday)",
     "from": "From",
     "to": "To"
   },
@@ -12,7 +12,8 @@
     "cashFlow": "Cash flow",
     "cardStatements": "Card statements",
     "recurring": "Recurring",
-    "budget": "Budget"
+    "budget": "Budget",
+    "byWeekday": "By weekday"
   },
   "export": {
     "csv": "Export CSV",
@@ -80,6 +81,23 @@
       "planned": "Planned",
       "realized": "Realized",
       "variance": "Variance"
+    }
+  },
+  "weekdayChart": {
+    "title": "Spending by day of week",
+    "empty": "No spending recorded for this period.",
+    "excludeInstallments": "Exclude installments",
+    "seriesLabel": "Spending",
+    "transactionsWord": "transactions",
+    "averageLabel": "Avg",
+    "days": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
     }
   },
   "months": {

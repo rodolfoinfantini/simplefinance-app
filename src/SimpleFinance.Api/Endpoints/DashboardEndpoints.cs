@@ -25,6 +25,8 @@ public static class DashboardEndpoints
         group.MapGet("/summary", GetSummaryAsync);
         group.MapGet("/spending-by-category", GetSpendingByCategoryAsync);
         group.MapGet("/spending-by-parent-category", GetSpendingByParentCategoryAsync);
+        group.MapGet("/spending-pace", GetSpendingPaceAsync);
+        group.MapGet("/parent-category-trend", GetParentCategoryTrendAsync);
         group.MapGet("/income-expense", GetIncomeExpenseAsync);
         group.MapGet("/net-worth-evolution", GetNetWorthEvolutionAsync);
         group.MapGet("/at-risk-budgets", GetAtRiskBudgetsAsync);
@@ -97,8 +99,7 @@ public static class DashboardEndpoints
         return Results.Ok(result);
     }
 
-    // 05-UI-SPEC.md: fixed 6-month range, no user toggle in this phase.
-    private static async Task<IResult> GetIncomeExpenseAsync(
+    private static async Task<IResult> GetSpendingPaceAsync(
         DashboardService dashboardService,
         ClaimsPrincipal principal,
         CancellationToken ct)
@@ -109,7 +110,51 @@ public static class DashboardEndpoints
             return Results.Unauthorized();
         }
 
-        var result = await dashboardService.GetIncomeExpenseAsync(userId.Value, monthsBack: 6, ct);
+        var result = await dashboardService.GetSpendingPaceAsync(userId.Value, ct);
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> GetParentCategoryTrendAsync(
+        int? months,
+        DashboardService dashboardService,
+        ClaimsPrincipal principal,
+        CancellationToken ct)
+    {
+        var userId = GetUserId(principal);
+        if (userId is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var resolvedMonths = months ?? 6;
+        if (resolvedMonths != 6 && resolvedMonths != 12)
+        {
+            return Results.BadRequest(new { error = "months must be exactly 6 or 12." });
+        }
+
+        var result = await dashboardService.GetParentCategoryTrendAsync(userId.Value, resolvedMonths, ct);
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> GetIncomeExpenseAsync(
+        int? months,
+        DashboardService dashboardService,
+        ClaimsPrincipal principal,
+        CancellationToken ct)
+    {
+        var userId = GetUserId(principal);
+        if (userId is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var resolvedMonths = months ?? 6;
+        if (resolvedMonths != 6 && resolvedMonths != 12)
+        {
+            return Results.BadRequest(new { error = "months must be exactly 6 or 12." });
+        }
+
+        var result = await dashboardService.GetIncomeExpenseAsync(userId.Value, monthsBack: resolvedMonths, ct);
         return Results.Ok(result);
     }
 

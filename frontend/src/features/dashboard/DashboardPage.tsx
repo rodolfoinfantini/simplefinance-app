@@ -1,12 +1,16 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { Alert, Button, ButtonGroup, Card, CardBody, Col, Placeholder, Row } from 'react-bootstrap'
+import { Alert, Badge, Button, ButtonGroup, Card, CardBody, Col, Placeholder, Row } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 
 import { CategoryBarChart } from '@/components/charts/CategoryBarChart'
 import { ChartCard } from '@/components/charts/ChartCard'
 import { EvolutionLineChart } from '@/components/charts/EvolutionLineChart'
 import { IncomeExpenseBarChart } from '@/components/charts/IncomeExpenseBarChart'
+import { InstallmentProjectionChart } from '@/components/charts/InstallmentProjectionChart'
+import { ParentCategoryTrendChart } from '@/components/charts/ParentCategoryTrendChart'
+import { SavingsRateChart } from '@/components/charts/SavingsRateChart'
+import { SpendingPaceChart } from '@/components/charts/SpendingPaceChart'
 import { StatTile } from '@/components/StatTile'
 import { useAuth } from '@/features/auth/useAuth'
 import { AiInsightStrip } from '@/features/dashboard/AiInsightStrip'
@@ -17,12 +21,15 @@ import {
   useDashboardSummaryQuery,
   useIncomeExpenseQuery,
   useNetWorthEvolutionQuery,
+  useParentCategoryTrendQuery,
   useSpendingByCategoryQuery,
   useSpendingByParentCategoryQuery,
+  useSpendingPaceQuery,
   useUpcomingDueDatesQuery,
 } from '@/features/dashboard/api'
 import { PeriodSelector, thisMonthPeriod, type DashboardPeriod } from '@/features/dashboard/PeriodSelector'
 import { UpcomingDueDateRow } from '@/features/dashboard/UpcomingDueDateRow'
+import { useInstallmentsQuery } from '@/features/installments/api'
 
 function StatTileSkeleton() {
   return (
@@ -56,11 +63,17 @@ export function DashboardPage() {
 
   const [period, setPeriod] = useState<DashboardPeriod>(() => thisMonthPeriod())
   const [netWorthRange, setNetWorthRange] = useState<6 | 12>(6)
+  const [parentTrendRange, setParentTrendRange] = useState<6 | 12>(6)
+  const [savingsRange, setSavingsRange] = useState<6 | 12>(6)
 
   const summaryQuery = useDashboardSummaryQuery(token, period.dateFrom, period.dateTo)
   const spendingByParentCategoryQuery = useSpendingByParentCategoryQuery(token, period.dateFrom, period.dateTo)
   const spendingByCategoryQuery = useSpendingByCategoryQuery(token, period.dateFrom, period.dateTo)
-  const incomeExpenseQuery = useIncomeExpenseQuery(token)
+  const spendingPaceQuery = useSpendingPaceQuery(token)
+  const installmentsQuery = useInstallmentsQuery(token)
+  const parentCategoryTrendQuery = useParentCategoryTrendQuery(token, parentTrendRange)
+  const incomeExpenseQuery = useIncomeExpenseQuery(token, 6)
+  const savingsIncomeExpenseQuery = useIncomeExpenseQuery(token, savingsRange)
   const netWorthEvolutionQuery = useNetWorthEvolutionQuery(token, netWorthRange)
   const atRiskBudgetsQuery = useAtRiskBudgetsQuery(token)
   const upcomingDueDatesQuery = useUpcomingDueDatesQuery(token)
@@ -68,10 +81,24 @@ export function DashboardPage() {
   const summary = summaryQuery.data
   const parentSpendingItems = spendingByParentCategoryQuery.data?.items ?? []
   const spendingItems = spendingByCategoryQuery.data?.items ?? []
+  const spendingPace = spendingPaceQuery.data
+  const installmentProjection = installmentsQuery.data?.monthlyProjection ?? []
+  const parentTrendMonths = parentCategoryTrendQuery.data?.months ?? []
+  const parentTrendSeries = parentCategoryTrendQuery.data?.series ?? []
   const netWorthPoints = netWorthEvolutionQuery.data?.points ?? []
   const incomeExpenseItems = incomeExpenseQuery.data?.items ?? []
+  const savingsItems = savingsIncomeExpenseQuery.data?.items ?? []
   const atRiskItems = (atRiskBudgetsQuery.data?.items ?? []).slice(0, 4)
   const upcomingDueDates = upcomingDueDatesQuery.data?.items ?? []
+
+  const paceDeltaPercent =
+    spendingPace && spendingPace.threeMonthAverageAtSameDay > 0
+      ? Math.round(
+          ((spendingPace.currentMonthTotal - spendingPace.threeMonthAverageAtSameDay) /
+            spendingPace.threeMonthAverageAtSameDay) *
+            100
+        )
+      : null
 
   return (
     <>
@@ -180,6 +207,138 @@ export function DashboardPage() {
                 const categoryParam = item.id ? `categoryId=${item.id}&` : ''
                 navigate(`/transactions?${categoryParam}dateFrom=${period.dateFrom}&dateTo=${period.dateTo}`)
               }}
+            />
+          </ChartCard>
+        </Col>
+      </Row>
+
+      <Row className="g-3 row-cols-1 row-cols-xl-2 mb-3">
+        <Col>
+          <ChartCard
+            title={t('chart.spendingPace.title')}
+            action={
+              paceDeltaPercent !== null && spendingPace ? (
+                <Badge bg={paceDeltaPercent <= 0 ? 'success-subtle' : 'danger-subtle'} text={paceDeltaPercent <= 0 ? 'success' : 'danger'}>
+                  {t('chart.spendingPace.vsAverageBadge', {
+                    day: spendingPace.currentDay,
+                    percent: `${paceDeltaPercent > 0 ? '+' : ''}${paceDeltaPercent}%`,
+                  })}
+                </Badge>
+              ) : undefined
+            }
+            isLoading={spendingPaceQuery.isPending}
+            isError={spendingPaceQuery.isError}
+            onRetry={() => void spendingPaceQuery.refetch()}
+            isEmpty={!spendingPaceQuery.isPending && (spendingPace?.points.length ?? 0) === 0}
+            emptyMessage={t('chart.spendingPace.emptyMessage')}
+          >
+            <SpendingPaceChart
+              points={spendingPace?.points ?? []}
+              labels={{
+                currentMonth: t('chart.spendingPace.currentMonth'),
+                previousMonth: t('chart.spendingPace.previousMonth'),
+                threeMonthAverage: t('chart.spendingPace.threeMonthAverage'),
+                dayPrefix: t('chart.spendingPace.dayPrefix'),
+              }}
+            />
+          </ChartCard>
+        </Col>
+
+        <Col>
+          <ChartCard
+            title={t('chart.installmentProjection.title')}
+            action={
+              <Link to="/installments" className="fw-semibold small text-decoration-none">
+                {t('chart.installmentProjection.viewAll')}
+              </Link>
+            }
+            isLoading={installmentsQuery.isPending}
+            isError={installmentsQuery.isError}
+            onRetry={() => void installmentsQuery.refetch()}
+            isEmpty={!installmentsQuery.isPending && installmentProjection.length === 0}
+            emptyMessage={t('chart.installmentProjection.emptyMessage')}
+          >
+            <InstallmentProjectionChart
+              items={installmentProjection}
+              seriesLabel={t('chart.installmentProjection.seriesLabel')}
+              installmentsWord={t('chart.installmentProjection.installmentsWord')}
+            />
+          </ChartCard>
+        </Col>
+      </Row>
+
+      <Row className="g-3 row-cols-1 row-cols-xl-2 mb-3">
+        <Col>
+          <ChartCard
+            title={t('chart.parentCategoryTrend.title')}
+            action={
+              <ButtonGroup size="sm">
+                <Button
+                  variant={parentTrendRange === 6 ? 'primary' : 'outline-secondary'}
+                  onClick={() => setParentTrendRange(6)}
+                >
+                  {t('chart.netWorthOverTime.ranges.6m')}
+                </Button>
+                <Button
+                  variant={parentTrendRange === 12 ? 'primary' : 'outline-secondary'}
+                  onClick={() => setParentTrendRange(12)}
+                >
+                  {t('chart.netWorthOverTime.ranges.12m')}
+                </Button>
+              </ButtonGroup>
+            }
+            isLoading={parentCategoryTrendQuery.isPending}
+            isError={parentCategoryTrendQuery.isError}
+            onRetry={() => void parentCategoryTrendQuery.refetch()}
+            isEmpty={!parentCategoryTrendQuery.isPending && parentTrendSeries.length === 0}
+            emptyMessage={t('chart.parentCategoryTrend.emptyMessage')}
+          >
+            <ParentCategoryTrendChart
+              months={parentTrendMonths}
+              series={parentTrendSeries.map((s) => ({
+                categoryId: s.categoryId,
+                label:
+                  s.categoryId === null && s.categoryName === 'Uncategorized'
+                    ? t('chart.spendingByCategory.uncategorized')
+                    : s.categoryId === null && s.categoryName === 'Others'
+                      ? t('chart.spendingByCategory.others')
+                      : s.categoryName,
+                color: s.categoryColor,
+                amounts: s.amounts,
+              }))}
+            />
+          </ChartCard>
+        </Col>
+
+        <Col>
+          <ChartCard
+            title={t('chart.savingsRate.title')}
+            action={
+              <ButtonGroup size="sm">
+                <Button
+                  variant={savingsRange === 6 ? 'primary' : 'outline-secondary'}
+                  onClick={() => setSavingsRange(6)}
+                >
+                  {t('chart.netWorthOverTime.ranges.6m')}
+                </Button>
+                <Button
+                  variant={savingsRange === 12 ? 'primary' : 'outline-secondary'}
+                  onClick={() => setSavingsRange(12)}
+                >
+                  {t('chart.netWorthOverTime.ranges.12m')}
+                </Button>
+              </ButtonGroup>
+            }
+            isLoading={savingsIncomeExpenseQuery.isPending}
+            isError={savingsIncomeExpenseQuery.isError}
+            onRetry={() => void savingsIncomeExpenseQuery.refetch()}
+            isEmpty={!savingsIncomeExpenseQuery.isPending && savingsItems.length === 0}
+            emptyMessage={t('chart.savingsRate.emptyMessage')}
+          >
+            <SavingsRateChart
+              items={savingsItems}
+              netLabel={t('chart.savingsRate.netLabel')}
+              savingsRateLabel={t('chart.savingsRate.rateLabel')}
             />
           </ChartCard>
         </Col>

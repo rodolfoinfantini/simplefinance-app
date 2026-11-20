@@ -33,6 +33,24 @@ public sealed record UpcomingDueDateItemResult(
 
 public sealed record UpcomingDueDatesResult(IReadOnlyList<UpcomingDueDateItemResult> Items);
 
+public sealed record SpendingPaceDayPoint(
+    int Day, decimal? CurrentMonth, decimal PreviousMonth, decimal ThreeMonthAverage);
+
+public sealed record SpendingPaceResult(
+    int CurrentDay,
+    decimal CurrentMonthTotal,
+    decimal PreviousMonthAtSameDay,
+    decimal ThreeMonthAverageAtSameDay,
+    IReadOnlyList<SpendingPaceDayPoint> Points);
+
+public sealed record TrendMonth(int Year, int Month);
+
+public sealed record ParentCategoryTrendSeries(
+    Guid? CategoryId, string CategoryName, string? CategoryColor, IReadOnlyList<decimal> Amounts);
+
+public sealed record ParentCategoryTrendResult(
+    IReadOnlyList<TrendMonth> Months, IReadOnlyList<ParentCategoryTrendSeries> Series);
+
 /// <summary>
 /// DASH-01..05: the Dashboard's full read surface (05-06). Every actual SQL/aggregation call is
 /// delegated to <see cref="DashboardQueries"/> (05-04, Dapper) or, for at-risk budgets,
@@ -257,6 +275,151 @@ public sealed class DashboardService(SimpleFinanceDbContext db, DashboardQueries
             .ToList();
 
         return new UpcomingDueDatesResult(items);
+    }
+
+    /// <summary>Cumulative day-by-day expense burn-up curve for the current month compared against
+    /// the prior month and the 3-month rolling average (computed in America/Sao_Paulo).</summary>
+    public async Task<SpendingPaceResult> GetSpendingPaceAsync(Guid userId, CancellationToken ct)
+    {
+        var todayBrt = DateTime.UtcNow.AddHours(-3).Date;
+        var currentMonthStart = new DateTime(todayBrt.Year, todayBrt.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var prev1 = currentMonthStart.AddMonths(-1);
+        var prev2 = currentMonthStart.AddMonths(-2);
+        var prev3 = currentMonthStart.AddMonths(-3);
+
+        // Widen UTC bounds by +/- 1 day so BRT timezone conversion at month boundaries never clips.
+        var rangeStart = prev3.AddDays(-1);
+        var rangeEnd = new DateTime(
+            todayBrt.Year, todayBrt.Month,
+            DateTime.DaysInMonth(todayBrt.Year, todayBrt.Month), 23, 59, 59, DateTimeKind.Utc).AddDays(1);
+
+        var rows = await dashboardQueries.GetDailyExpenseAsync(userId, rangeStart, rangeEnd, ct);
+        var dailyMap = rows.ToDictionary(r => (r.Year, r.Month, r.Day), r => r.Expense);
+
+        var daysInCurrentMonth = DateTime.DaysInMonth(todayBrt.Year, todayBrt.Month);
+        var currentDay = todayBrt.Day;
+
+        var curCumulative = BuildCumulativeSeries(dailyMap, currentMonthStart.Year, currentMonthStart.Month, daysInCurrentMonth);
+        var prev1Cumulative = BuildCumulativeSeries(dailyMap, prev1.Year, prev1.Month, daysInCurrentMonth);
+        var prev2Cumulative = BuildCumulativeSeries(dailyMap, prev2.Year, prev2.Month, daysInCurrentMonth);
+        var prev3Cumulative = BuildCumulativeSeries(dailyMap, prev3.Year, prev3.Month, daysInCurrentMonth);
+
+        var points = new List<SpendingPaceDayPoint>(daysInCurrentMonth);
+        for (var d = 1; d <= daysInCurrentMonth; d++)
+        {
+            var avg = Math.Round((prev1Cumulative[d] + prev2Cumulative[d] + prev3Cumulative[d]) / 3m, 2);
+            points.Add(new SpendingPaceDayPoint(
+                Day: d,
+                CurrentMonth: d <= currentDay ? curCumulative[d] : null,
+                PreviousMonth: prev1Cumulative[d],
+                ThreeMonthAverage: avg));
+        }
+
+        var todayPoint = points[currentDay - 1];
+        return new SpendingPaceResult(
+            CurrentDay: currentDay,
+            CurrentMonthTotal: todayPoint.CurrentMonth ?? 0m,
+            PreviousMonthAtSameDay: todayPoint.PreviousMonth,
+            ThreeMonthAverageAtSameDay: todayPoint.ThreeMonthAverage,
+            Points: points);
+    }
+
+    private static decimal[] BuildCumulativeSeries(
+        Dictionary<(int Year, int Month, int Day), decimal> dailyMap,
+        int year,
+        int month,
+        int targetDays)
+    {
+        var daysInSourceMonth = DateTime.DaysInMonth(year, month);
+        var cumulative = new decimal[targetDays + 1];
+        var running = 0m;
+        for (var d = 1; d <= targetDays; d++)
+        {
+            if (d <= daysInSourceMonth && dailyMap.TryGetValue((year, month, d), out var amount))
+            {
+                running += amount;
+            }
+            cumulative[d] = running;
+        }
+        return cumulative;
+    }
+
+    /// <summary>Monthly spending evolution rolled up by parent category across the last N months.
+    /// Keeps the top 6 parent categories by period total and aggregates any remainder into "Others".</summary>
+    public async Task<ParentCategoryTrendResult> GetParentCategoryTrendAsync(
+        Guid userId, int monthsBack, CancellationToken ct)
+    {
+        var todayBrt = DateTime.UtcNow.AddHours(-3).Date;
+        var currentMonthStart = new DateTime(todayBrt.Year, todayBrt.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var rangeStartMonth = currentMonthStart.AddMonths(-(monthsBack - 1));
+        var rangeEnd = new DateTime(
+            currentMonthStart.Year, currentMonthStart.Month,
+            DateTime.DaysInMonth(currentMonthStart.Year, currentMonthStart.Month), 23, 59, 59, DateTimeKind.Utc).AddDays(1);
+
+        var rows = await dashboardQueries.GetMonthlyParentCategorySpendAsync(userId, rangeStartMonth.AddDays(-1), rangeEnd, ct);
+
+        var months = new List<TrendMonth>(monthsBack);
+        var monthIndexByYm = new Dictionary<(int Year, int Month), int>(monthsBack);
+        for (var i = 0; i < monthsBack; i++)
+        {
+            var m = rangeStartMonth.AddMonths(i);
+            months.Add(new TrendMonth(m.Year, m.Month));
+            monthIndexByYm[(m.Year, m.Month)] = i;
+        }
+
+        // Group rows by parent category (null = Uncategorized)
+        var totalsByCat = new Dictionary<string, (Guid? Id, string Name, string? Color, decimal[] Monthly)>();
+        foreach (var row in rows)
+        {
+            if (!monthIndexByYm.TryGetValue((row.Year, row.Month), out var idx))
+            {
+                continue;
+            }
+
+            var key = row.CategoryId?.ToString() ?? "__uncategorized__";
+            if (!totalsByCat.TryGetValue(key, out var entry))
+            {
+                entry = (
+                    row.CategoryId,
+                    row.CategoryId is null ? "Uncategorized" : (row.CategoryName ?? "Uncategorized"),
+                    row.CategoryColor,
+                    new decimal[monthsBack]);
+                totalsByCat[key] = entry;
+            }
+
+            entry.Monthly[idx] += row.Amount;
+        }
+
+        var ranked = totalsByCat.Values
+            .OrderByDescending(v => v.Monthly.Sum())
+            .ToList();
+
+        const int maxNamedSeries = 6;
+        var top = ranked.Take(maxNamedSeries).ToList();
+        var remainder = ranked.Skip(maxNamedSeries).ToList();
+
+        var series = top
+            .Select(c => new ParentCategoryTrendSeries(c.Id, c.Name, c.Color, c.Monthly))
+            .ToList();
+
+        if (remainder.Count > 0)
+        {
+            var othersMonthly = new decimal[monthsBack];
+            foreach (var r in remainder)
+            {
+                for (var i = 0; i < monthsBack; i++)
+                {
+                    othersMonthly[i] += r.Monthly[i];
+                }
+            }
+
+            if (othersMonthly.Sum() > 0m)
+            {
+                series.Add(new ParentCategoryTrendSeries(null, "Others", null, othersMonthly));
+            }
+        }
+
+        return new ParentCategoryTrendResult(months, series);
     }
 
     // 0 when totalAmount is 0 -- never divide by zero.

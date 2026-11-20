@@ -12,6 +12,8 @@ public sealed record CardStatementRow(
 
 public sealed record TopMerchantRow(string MerchantName, decimal TotalSpent, int TxnCount);
 
+public sealed record WeekdaySpendRow(int DayOfWeek, decimal TotalAmount, int TransactionCount);
+
 /// <summary>
 /// RPT-03: the 2 new Dapper aggregates Phase 7's Reports feature needs that don't already exist
 /// in DashboardQueries/InvestmentQueries -- cash-flow-by-account and card-statements-by-month.
@@ -194,6 +196,61 @@ public sealed class ReportQueries(IDbConnectionFactory connectionFactory) : ITop
 
         var command = new CommandDefinition(sql, parameters, cancellationToken: ct);
         var rows = await connection.QueryAsync<TopMerchantRow>(command);
+        return rows.ToList();
+    }
+
+    /// <summary>Groups non-transfer, non-hidden Debit expenses by day of week (0 = Sunday .. 6 = Saturday)
+    /// in America/Sao_Paulo timezone, optionally excluding multi-installment charges to focus on variable
+    /// day-to-day spending habits.</summary>
+    public async Task<IReadOnlyList<WeekdaySpendRow>> GetSpendingByWeekdayAsync(
+        Guid userId, DateTime periodStart, DateTime periodEnd, bool excludeInstallments, CancellationToken ct)
+    {
+        var sql = excludeInstallments
+            ? """
+              SELECT
+                  EXTRACT(DOW FROM (t."Date" AT TIME ZONE 'America/Sao_Paulo'))::int AS "DayOfWeek",
+                  SUM(ABS(t."Amount")) AS "TotalAmount",
+                  COUNT(*)::int AS "TransactionCount"
+              FROM "Transactions" t
+              WHERE t."UserId" = @UserId
+                AND t."Date" >= @PeriodStart AND t."Date" <= @PeriodEnd
+                AND t."Type" = @DebitType
+                AND t."IsTransfer" = false
+                AND t."IsHidden" = false
+                AND t."DeletedAt" IS NULL
+                AND (t."TotalInstallments" IS NULL OR t."TotalInstallments" <= 1)
+              GROUP BY 1
+              ORDER BY 1;
+              """
+            : """
+              SELECT
+                  EXTRACT(DOW FROM (t."Date" AT TIME ZONE 'America/Sao_Paulo'))::int AS "DayOfWeek",
+                  SUM(ABS(t."Amount")) AS "TotalAmount",
+                  COUNT(*)::int AS "TransactionCount"
+              FROM "Transactions" t
+              WHERE t."UserId" = @UserId
+                AND t."Date" >= @PeriodStart AND t."Date" <= @PeriodEnd
+                AND t."Type" = @DebitType
+                AND t."IsTransfer" = false
+                AND t."IsHidden" = false
+                AND t."DeletedAt" IS NULL
+              GROUP BY 1
+              ORDER BY 1;
+              """;
+
+        var parameters = new
+        {
+            UserId = userId,
+            PeriodStart = periodStart,
+            PeriodEnd = periodEnd,
+            DebitType = (int)TransactionType.Debit,
+        };
+
+        using var connection = connectionFactory.CreateConnection();
+        connection.Open();
+
+        var command = new CommandDefinition(sql, parameters, cancellationToken: ct);
+        var rows = await connection.QueryAsync<WeekdaySpendRow>(command);
         return rows.ToList();
     }
 }

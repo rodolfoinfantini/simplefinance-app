@@ -14,6 +14,8 @@ import {
 } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 
+import { ChartCard } from '@/components/charts/ChartCard'
+import { InstallmentProjectionChart } from '@/components/charts/InstallmentProjectionChart'
 import { Icon as IconifyIcon } from '@/components/Icon'
 import { MoneyText } from '@/components/MoneyText'
 import { StatTile } from '@/components/StatTile'
@@ -228,31 +230,50 @@ export function InstallmentsPage() {
       )}
 
       {!installmentsQuery.isError && !isEmpty && (
-        <Card>
-          <div className="table-responsive">
-            <Table className="table-custom align-middle mb-0">
-              <thead>
-                <tr>
-                  <th>{t('table.description')}</th>
-                  <th>{t('table.purchaseDate')}</th>
-                  <th>{t('table.card')}</th>
-                  <th>{t('table.category')}</th>
-                  <th>{t('table.installment')}</th>
-                  <th className="text-end">{t('table.installmentAmount')}</th>
-                  <th className="text-end">{t('table.remainingAmount')}</th>
-                  <th>{t('table.lastInstallmentDate')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isInitialLoading &&
-                  Array.from({ length: 6 }).map((_, index) => <RowSkeleton key={index} />)}
+        <>
+          {(data?.monthlyProjection?.length ?? 0) > 0 && (
+            <div className="mb-3">
+              <ChartCard
+                title={t('projection.title')}
+                isLoading={isInitialLoading}
+                isError={false}
+              >
+                <InstallmentProjectionChart
+                  items={data?.monthlyProjection ?? []}
+                  seriesLabel={t('projection.seriesLabel')}
+                  installmentsWord={t('projection.installmentsWord')}
+                  height={260}
+                />
+              </ChartCard>
+            </div>
+          )}
 
-                {!isInitialLoading &&
-                  items.map((item) => <InstallmentRow key={item.id} item={item} />)}
-              </tbody>
-            </Table>
-          </div>
-        </Card>
+          <Card>
+            <div className="table-responsive">
+              <Table className="table-custom align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>{t('table.description')}</th>
+                    <th>{t('table.purchaseDate')}</th>
+                    <th>{t('table.card')}</th>
+                    <th>{t('table.category')}</th>
+                    <th>{t('table.installment')}</th>
+                    <th className="text-end">{t('table.installmentAmount')}</th>
+                    <th className="text-end">{t('table.remainingAmount')}</th>
+                    <th>{t('table.lastInstallmentDate')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isInitialLoading &&
+                    Array.from({ length: 6 }).map((_, index) => <RowSkeleton key={index} />)}
+
+                  {!isInitialLoading &&
+                    items.map((item) => <InstallmentRow key={item.id} item={item} />)}
+                </tbody>
+              </Table>
+            </div>
+          </Card>
+        </>
       )}
     </div>
   )

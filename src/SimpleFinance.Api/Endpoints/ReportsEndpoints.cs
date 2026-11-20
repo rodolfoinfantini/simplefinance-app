@@ -28,6 +28,7 @@ public static class ReportsEndpoints
         group.MapGet("/card-statements", GetCardStatementsAsync);
         group.MapGet("/recurring", GetRecurringAsync);
         group.MapGet("/budget-realized-vs-planned", GetBudgetRealizedVsPlannedAsync);
+        group.MapGet("/spending-by-weekday", GetSpendingByWeekdayAsync);
     }
 
     private static async Task<IResult> GetSpendingByCategoryAsync(
@@ -174,6 +175,30 @@ public static class ReportsEndpoints
         }
 
         var result = await reportsService.GetBudgetRealizedVsPlannedAsync(userId.Value, year.Value, month.Value, ct);
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> GetSpendingByWeekdayAsync(
+        DateTime? dateFrom,
+        DateTime? dateTo,
+        bool? excludeInstallments,
+        ReportsService reportsService,
+        ClaimsPrincipal principal,
+        CancellationToken ct)
+    {
+        var userId = GetUserId(principal);
+        if (userId is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (dateFrom is null || dateTo is null)
+        {
+            return Results.BadRequest(new { error = "dateFrom and dateTo are required." });
+        }
+
+        var result = await reportsService.GetSpendingByWeekdayAsync(
+            userId.Value, dateFrom.Value, dateTo.Value, excludeInstallments ?? true, ct);
         return Results.Ok(result);
     }
 

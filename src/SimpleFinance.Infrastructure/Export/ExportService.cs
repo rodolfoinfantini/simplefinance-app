@@ -31,7 +31,8 @@ public sealed record TransactionExportFilters(
 /// (budget-realized-vs-planned). All optional; <see cref="ExportService.BuildReportTableAsync"/>
 /// defaults each report's missing parameters sensibly (current month / 30 days).
 /// </summary>
-public sealed record ReportExportQuery(DateTime? DateFrom, DateTime? DateTo, int? Days, int? Year, int? Month);
+public sealed record ReportExportQuery(
+    DateTime? DateFrom, DateTime? DateTo, int? Days, int? Year, int? Month, bool? ExcludeInstallments = null);
 
 /// <summary>
 /// RPT-02: generic CSV (CsvHelper)/XLSX (ClosedXML) writers over the report-agnostic <see
@@ -195,6 +196,7 @@ public sealed class ExportService(SimpleFinanceDbContext db)
             "card-statements" => await BuildCardStatementsTableAsync(reportsService, userId, query, ct),
             "recurring" => await BuildRecurringTableAsync(reportsService, userId, ct),
             "budget-realized-vs-planned" => await BuildBudgetRealizedTableAsync(reportsService, userId, query, ct),
+            "spending-by-weekday" => await BuildSpendingByWeekdayTableAsync(reportsService, userId, query, ct),
             _ => throw new ArgumentException($"Unknown report type: {reportType}", nameof(reportType)),
         };
     }
@@ -377,6 +379,37 @@ public sealed class ExportService(SimpleFinanceDbContext db)
             .ToList();
 
         return new ExportTable(["Category", "Planned", "Realized", "Variance"], tableRows);
+    }
+
+    private static async Task<ExportTable> BuildSpendingByWeekdayTableAsync(
+        ReportsService reportsService, Guid userId, ReportExportQuery query, CancellationToken ct)
+    {
+        var (start, end) = ResolvePeriod(query.DateFrom, query.DateTo);
+        var rows = await reportsService.GetSpendingByWeekdayAsync(
+            userId, start, end, query.ExcludeInstallments ?? true, ct);
+
+        var dayNames = new Dictionary<int, string>
+        {
+            [0] = "Sunday",
+            [1] = "Monday",
+            [2] = "Tuesday",
+            [3] = "Wednesday",
+            [4] = "Thursday",
+            [5] = "Friday",
+            [6] = "Saturday",
+        };
+
+        var tableRows = rows
+            .Select(r => new[]
+            {
+                dayNames.GetValueOrDefault(r.DayOfWeek, r.DayOfWeek.ToString(CultureInfo.InvariantCulture)),
+                FormatAmount(r.TotalAmount),
+                r.TransactionCount.ToString(CultureInfo.InvariantCulture),
+                FormatAmount(r.AverageAmount),
+            })
+            .ToList();
+
+        return new ExportTable(["DayOfWeek", "TotalAmount", "TransactionCount", "AverageAmount"], tableRows);
     }
 
     // Defaults to the current calendar month (inclusive [first day 00:00:00 UTC, last day

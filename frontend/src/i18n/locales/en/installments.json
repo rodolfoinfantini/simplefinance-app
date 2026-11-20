@@ -10,6 +10,11 @@
     "monthlyCommitted": "Committed per month",
     "activePlans": "Active installment plans"
   },
+  "projection": {
+    "title": "Monthly installment projection",
+    "seriesLabel": "Committed installments",
+    "installmentsWord": "installments"
+  },
   "table": {
     "description": "Description",
     "purchaseDate": "Purchase date",

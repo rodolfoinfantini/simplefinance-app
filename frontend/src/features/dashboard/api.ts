@@ -81,6 +81,38 @@ export interface UpcomingDueDatesResponse {
   items: UpcomingDueDateItem[]
 }
 
+export interface SpendingPaceDayPoint {
+  day: number
+  currentMonth: number | null
+  previousMonth: number
+  threeMonthAverage: number
+}
+
+export interface SpendingPaceResponse {
+  currentDay: number
+  currentMonthTotal: number
+  previousMonthAtSameDay: number
+  threeMonthAverageAtSameDay: number
+  points: SpendingPaceDayPoint[]
+}
+
+export interface TrendMonth {
+  year: number
+  month: number
+}
+
+export interface ParentCategoryTrendSeries {
+  categoryId: string | null
+  categoryName: string
+  categoryColor: string | null
+  amounts: number[]
+}
+
+export interface ParentCategoryTrendResponse {
+  months: TrendMonth[]
+  series: ParentCategoryTrendSeries[]
+}
+
 export function useDashboardSummaryQuery(accessToken: string, dateFrom?: string, dateTo?: string) {
   return useQuery({
     queryKey: ['dashboard-summary', dateFrom, dateTo],
@@ -117,10 +149,29 @@ export function useSpendingByParentCategoryQuery(accessToken: string, dateFrom?:
   })
 }
 
-export function useIncomeExpenseQuery(accessToken: string) {
+export function useIncomeExpenseQuery(accessToken: string, months: 6 | 12 = 6) {
   return useQuery({
-    queryKey: ['dashboard-income-expense'],
-    queryFn: () => apiFetch<IncomeExpenseResponse>('/api/dashboard/income-expense', { accessToken }),
+    queryKey: ['dashboard-income-expense', months],
+    queryFn: () => apiFetch<IncomeExpenseResponse>(`/api/dashboard/income-expense?months=${months}`, { accessToken }),
+    enabled: !!accessToken,
+  })
+}
+
+export function useSpendingPaceQuery(accessToken: string) {
+  return useQuery({
+    queryKey: ['dashboard-spending-pace'],
+    queryFn: () => apiFetch<SpendingPaceResponse>('/api/dashboard/spending-pace', { accessToken }),
+    enabled: !!accessToken,
+  })
+}
+
+export function useParentCategoryTrendQuery(accessToken: string, months: 6 | 12) {
+  return useQuery({
+    queryKey: ['dashboard-parent-category-trend', months],
+    queryFn: () =>
+      apiFetch<ParentCategoryTrendResponse>(`/api/dashboard/parent-category-trend?months=${months}`, {
+        accessToken,
+      }),
     enabled: !!accessToken,
   })
 }

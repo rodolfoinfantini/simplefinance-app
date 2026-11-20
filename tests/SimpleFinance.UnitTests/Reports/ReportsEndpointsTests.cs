@@ -32,6 +32,7 @@ public class ReportsEndpointsTests
     [InlineData("/api/reports/card-statements?dateFrom=2026-06-01&dateTo=2026-06-30")]
     [InlineData("/api/reports/recurring")]
     [InlineData("/api/reports/budget-realized-vs-planned?year=2026&month=6")]
+    [InlineData("/api/reports/spending-by-weekday?dateFrom=2026-06-01&dateTo=2026-06-30")]
     public async Task GetReportRoute_NoAuthToken_Returns401(string path)
     {
         using var factory = new ReportsApiFactory();
@@ -179,6 +180,19 @@ public class ReportsEndpointsTests
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(JsonValueKind.Array, body.ValueKind);
         Assert.Empty(body.EnumerateArray());
+    }
+
+    [Fact]
+    public async Task GetSpendingByWeekday_MissingDateFrom_Returns400()
+    {
+        using var factory = new ReportsApiFactory();
+        using var client = factory.CreateClient();
+        var accessToken = await SetupAndLoginAsync(client);
+
+        var response = await client.SendAsync(
+            AuthedGet("/api/reports/spending-by-weekday?dateTo=2026-06-30", accessToken));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     private static async Task<string> SetupAndLoginAsync(HttpClient client)

@@ -20,6 +20,32 @@
       "uncategorized": "Sem categoria",
       "others": "Outros"
     },
+    "spendingPace": {
+      "title": "Ritmo de gastos no mês",
+      "emptyMessage": "Nenhum gasto registrado para comparar o ritmo deste mês.",
+      "currentMonth": "Mês atual",
+      "previousMonth": "Mês passado",
+      "threeMonthAverage": "Média (3 meses)",
+      "dayPrefix": "Dia",
+      "vsAverageBadge": "Dia {{day}}: {{percent}} vs. média"
+    },
+    "installmentProjection": {
+      "title": "Projeção de parcelas por mês",
+      "viewAll": "Ver todas as parcelas",
+      "emptyMessage": "Nenhuma parcela futura em aberto.",
+      "seriesLabel": "Parcelas comprometidas",
+      "installmentsWord": "parcelas"
+    },
+    "parentCategoryTrend": {
+      "title": "Evolução das categorias pai",
+      "emptyMessage": "Nenhum gasto categorizado neste período."
+    },
+    "savingsRate": {
+      "title": "Saldo líquido e taxa de poupança",
+      "emptyMessage": "Nenhuma receita ou despesa registrada ainda.",
+      "netLabel": "Saldo líquido",
+      "rateLabel": "Taxa de poupança"
+    },
     "netWorthOverTime": {
       "title": "Patrimônio líquido ao longo do tempo",
       "valueLabel": "Patrimônio líquido",

@@ -10,6 +10,11 @@
     "monthlyCommitted": "Comprometido por mês",
     "activePlans": "Parcelamentos ativos"
   },
+  "projection": {
+    "title": "Projeção de parcelas por mês",
+    "seriesLabel": "Parcelas comprometidas",
+    "installmentsWord": "parcelas"
+  },
   "table": {
     "description": "Descrição",
     "purchaseDate": "Data da compra",
