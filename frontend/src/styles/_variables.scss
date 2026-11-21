@@ -10,69 +10,71 @@
 // them into `--sf-*` CSS custom properties per color mode.
 
 // ---------------------------------------------------------------------------
-// Palette — surfaces
+// Palette — surfaces (dark mode uses Gruvbox Dark Hard/Medium)
 // ---------------------------------------------------------------------------
 $sf-surface-body-light: #f3f4f9;
-$sf-surface-body-dark: #0e1322;
+$sf-surface-body-dark: #1d2021;
 
 $sf-surface-card-light: #ffffff;
-$sf-surface-card-dark: #151b2e;
+$sf-surface-card-dark: #282828;
 
 $sf-surface-raised-light: #ffffff;
-$sf-surface-raised-dark: #1b2238;
+$sf-surface-raised-dark: #32302f;
 
 $sf-surface-sunken-light: #eceef5;
-$sf-surface-sunken-dark: #0a0e1a;
+$sf-surface-sunken-dark: #181a1b;
 
 $sf-border-subtle-light: #e2e5ee;
-$sf-border-subtle-dark: #252d47;
+$sf-border-subtle-dark: #504945;
 
 $sf-text-light: #1d2233;
-$sf-text-dark: #dfe3ef;
+$sf-text-dark: #ebdbb2;
 
 // ---------------------------------------------------------------------------
 // Palette — financial semantics
 // ---------------------------------------------------------------------------
 $sf-income-light: #0a7d55;
-$sf-income-dark: #3ddc97;
+$sf-income-dark: #8ec07c;
 
 $sf-expense-light: #c62f45;
-$sf-expense-dark: #ff6b81;
+$sf-expense-dark: #ff6b57;
 
 $sf-transfer-light: #2f5fc4;
-$sf-transfer-dark: #7aa7ff;
+$sf-transfer-dark: #83a598;
 
 $sf-neutral-light: #1d2233;
-$sf-neutral-dark: #e4e7f2;
+$sf-neutral-dark: #fbf1c7;
 
 // ---------------------------------------------------------------------------
 // Palette — charts
 // ---------------------------------------------------------------------------
 $sf-chart-primary-light: #6d4aff;
-$sf-chart-primary-dark: #9b87ff;
+$sf-chart-primary-dark: #fe8019;
 
 $sf-chart-text-light: #5a6178;
-$sf-chart-text-dark: #a3abc4;
+$sf-chart-text-dark: #bdae93;
 
 $sf-chart-grid-light: #e6e8f0;
-$sf-chart-grid-dark: #262e48;
+$sf-chart-grid-dark: #3c3836;
 
 $sf-chart-gray-light: #858ca1;
-$sf-chart-gray-dark: #6b7491;
+$sf-chart-gray-dark: #928374;
 
 $sf-chart-palette-light: (#6d4aff, #0f9f6e, #c27a00, #1f8fd1, #d6457f, #6c9a1f);
-$sf-chart-palette-dark: (#9b87ff, #3ddc97, #ffb547, #5cc8ff, #ff7eb6, #c3e66e);
+$sf-chart-palette-dark: (#fe8019, #8ec07c, #fabd2f, #83a598, #d3869b, #b8bb26);
 
 // ---------------------------------------------------------------------------
 // Bootstrap — theme colors
 // ---------------------------------------------------------------------------
 // White text on $primary clears 4.5:1, so color-contrast() keeps white button
-// labels. success/danger/warning/info stay at Bootstrap defaults.
+// labels. success/danger/warning/info stay at Bootstrap defaults in light mode;
+// dark mode remaps them to Gruvbox in `_components.scss` and below.
 $primary: #6d4aff;
 $secondary: #5f6782;
 
 // ---------------------------------------------------------------------------
-// Bootstrap — body (literal colors: Bootstrap runs color math on these)
+// Bootstrap — body & dark-mode overrides (literal colors: Bootstrap runs
+// color math on these)
 // ---------------------------------------------------------------------------
 $body-bg: $sf-surface-body-light;
 $body-color: $sf-text-light;
@@ -80,9 +82,52 @@ $border-color: $sf-border-subtle-light;
 
 $body-bg-dark: $sf-surface-body-dark;
 $body-color-dark: $sf-text-dark;
-$border-color-dark: $sf-border-subtle-dark;
+$body-emphasis-color-dark: #fbf1c7;
+$body-secondary-color-dark: #bdae93;
 $body-secondary-bg-dark: $sf-surface-raised-dark;
-$body-tertiary-bg-dark: #181f33;
+$body-tertiary-color-dark: #a89984;
+$body-tertiary-bg-dark: #3c3836;
+$border-color-dark: $sf-border-subtle-dark;
+$border-color-translucent-dark: rgba(235, 219, 178, 0.14);
+$headings-color-dark: #fbf1c7;
+
+$primary-text-emphasis-dark: #fe8019;
+$secondary-text-emphasis-dark: #d5c4a1;
+$success-text-emphasis-dark: #8ec07c;
+$danger-text-emphasis-dark: #ff6b57;
+$warning-text-emphasis-dark: #fabd2f;
+$info-text-emphasis-dark: #83a598;
+$light-text-emphasis-dark: #fbf1c7;
+$dark-text-emphasis-dark: #d5c4a1;
+
+$primary-bg-subtle-dark: #3b2618;
+$secondary-bg-subtle-dark: #32302f;
+$success-bg-subtle-dark: #253023;
+$danger-bg-subtle-dark: #3b211f;
+$warning-bg-subtle-dark: #3a2f18;
+$info-bg-subtle-dark: #223030;
+$light-bg-subtle-dark: #32302f;
+$dark-bg-subtle-dark: #181a1b;
+
+$primary-border-subtle-dark: #7a3c12;
+$secondary-border-subtle-dark: #504945;
+$success-border-subtle-dark: #42663c;
+$danger-border-subtle-dark: #7d2f28;
+$warning-border-subtle-dark: #7c5c16;
+$info-border-subtle-dark: #3c6062;
+$light-border-subtle-dark: #504945;
+$dark-border-subtle-dark: #3c3836;
+
+$link-color-dark: #fe8019;
+$link-hover-color-dark: #fabd2f;
+$code-color-dark: #d3869b;
+$mark-color-dark: #1d2021;
+$mark-bg-dark: #fabd2f;
+
+$form-valid-color-dark: #8ec07c;
+$form-valid-border-color-dark: #689d6a;
+$form-invalid-color-dark: #ff6b57;
+$form-invalid-border-color-dark: #cc241d;
 
 // ---------------------------------------------------------------------------
 // Bootstrap — typography

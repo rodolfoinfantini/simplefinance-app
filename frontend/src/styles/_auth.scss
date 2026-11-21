@@ -15,12 +15,17 @@
   }
 }
 
-// Opaque stops, identical in both color modes. The lightest stop is $primary,
-// on which white text clears 4.5:1; the others are darker shades of it.
+// Opaque stops, matching light primary in light mode and Gruvbox amber/brown
+// in dark mode. Text clears 4.5:1 across all stops.
 .sf-auth__brand {
   display: none;
   color: $white;
   background-image: linear-gradient(135deg, shade-color($primary, 55%) 0%, shade-color($primary, 30%) 55%, $primary 100%);
+
+  [data-bs-theme="dark"] & {
+    color: #fbf1c7;
+    background-image: linear-gradient(135deg, #282828 0%, #5c2a0d 55%, #b84c0a 100%);
+  }
 
   @include media-breakpoint-up(lg) {
     display: flex;
@@ -33,7 +38,7 @@
   .sf-wordmark,
   .sf-wordmark:hover,
   .sf-wordmark:focus-visible {
-    color: $white;
+    color: inherit;
   }
 
   .sf-wordmark {

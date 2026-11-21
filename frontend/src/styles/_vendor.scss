@@ -80,3 +80,35 @@
     color: var(--bs-secondary-color);
   }
 }
+
+[data-bs-theme="dark"] {
+  .apexcharts-tooltip.apexcharts-theme-dark {
+    color: var(--bs-body-color);
+    background: var(--sf-surface-raised);
+    border: 1px solid var(--sf-border-subtle);
+    box-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, 0.35);
+
+    .apexcharts-tooltip-title {
+      color: var(--bs-emphasis-color);
+      background: var(--sf-surface-card);
+      border-bottom: 1px solid var(--sf-border-subtle);
+    }
+  }
+
+  .apexcharts-xaxistooltip,
+  .apexcharts-yaxistooltip {
+    color: var(--bs-body-color);
+    background: var(--sf-surface-raised);
+    border-color: var(--sf-border-subtle);
+  }
+
+  .apexcharts-menu {
+    color: var(--bs-body-color);
+    background: var(--sf-surface-raised);
+    border-color: var(--sf-border-subtle);
+  }
+
+  .apexcharts-theme-dark .apexcharts-menu-item:hover {
+    background: var(--bs-tertiary-bg);
+  }
+}
